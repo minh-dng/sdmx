@@ -10,7 +10,10 @@ v2.27.0 (2026-08-06)
 ====================
 
 - Update the base URL for the :ref:`SGR <SGR>` source
-  and add a new source ‘SGR3’ (:pull:`289`).
+  and add a new source 'SGR3' (:pull:`289`).
+- Update the :ref:`ABS` and :ref:`ABS_JSON` source URLs after the ABS API migration,
+  explicitly request XML structural metadata, and refresh supported endpoints
+  (:issue:`284`).
 
 v2.26.0 (2026-04-04)
 ====================
