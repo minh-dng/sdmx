@@ -114,6 +114,15 @@ def test_abs_metadata_accept_header_precedence():
     )
 
 
+def test_abs_url_does_not_set_metadata_accept_header():
+    request = Client("ABS").get(
+        url="https://data.api.abs.gov.au/rest/data/ABS,CPI,2.0.0/1.10001.10.50.M",
+        dry_run=True,
+    )
+
+    assert request.headers["Accept"] == "*/*"
+
+
 def test_add_source():
     profile = """{
         "id": "FOO",
