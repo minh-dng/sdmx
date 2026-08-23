@@ -1,16 +1,16 @@
 [build-system]
-requires = ["hatchling", "versioningit"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "sdmx1"
+version = "2.27.0"
 description = "Statistical Data and Metadata eXchange (SDMX)"
-dynamic = ["version"]
 authors = [{ name = "SDMX Python developers" }]
 maintainers = [
   { name = "Paul Natsuo Kishimoto", email = "mail@paul.kishimoto.name" },
 ]
-readme = "README.rst"
+readme = "README.md"
 keywords = ["statistics", "SDMX", "pandas", "data", "economics", "science"]
 classifiers = [
   "Intended Audience :: Developers",
@@ -75,7 +75,6 @@ exclude_also = [
 
 [tool.hatch]
 build.targets.wheel.packages = ["sdmx"]
-version.source = "versioningit"
 
 [tool.mypy]
 files = [
@@ -117,6 +116,3 @@ ignore = ["E501", "W191"]
 # - .reader.xml.v21._component_end: 12
 # - .testing.generate_endpoint_tests: 11
 mccabe.max-complexity = 10
-
-[tool.versioningit]
-default-version = "0.1.dev1"  # Match setuptools-scm
