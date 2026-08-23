@@ -395,6 +395,27 @@ def test_gh_266(installed_schemas: Path, specimen: SpecimenCollection) -> None:
     assert all(id_ in sm.codelist["CL_TOPIC"] for id_ in topics.split(","))
 
 
+def test_dataset_attribute_without_core_representation() -> None:
+    urn = "urn:sdmx:org.sdmx.infomodel.datastructure.DataStructure=FOO:BAR(1.0)"
+    dsd = v21.DataStructureDefinition(urn=urn)
+    dsd.attributes.append(
+        common.DataAttribute(id="ATTR", concept_identity=common.Concept(id="ATTR"))
+    )
+    content = f"""\
+<mes:StructureSpecificData
+  xmlns:mes="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message"
+  xmlns:u="{urn}:ObsLevelDim:TIME_PERIOD">
+  <u:DataSet ATTR="value" />
+</mes:StructureSpecificData>"""
+
+    message = cast(
+        sdmx.message.DataMessage,
+        sdmx.read_sdmx(BytesIO(content.encode()), structure=dsd),
+    )
+
+    assert message.data[0].attrib["ATTR"].value == "value"
+
+
 # Each entry is a tuple with 2 elements:
 # 1. an instance of lxml.etree.Element to be parsed.
 # 2. Either:

@@ -1285,7 +1285,11 @@ def _ds_start(reader, elem):
                 None,
                 [
                     getattr(da.local_representation, "enumerated", None),
-                    da.concept_identity.core_representation.enumerated,
+                    getattr(
+                        getattr(da.concept_identity, "core_representation", None),
+                        "enumerated",
+                        None,
+                    ),
                 ],
             )
         ):
