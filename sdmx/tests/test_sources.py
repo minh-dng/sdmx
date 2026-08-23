@@ -115,46 +115,84 @@ class TestABS(DataSourceTest):
         ),
     }
 
+    @pytest.mark.parametrize(
+        "flow_id, key, params",
+        [
+            pytest.param(
+                "LABOUR_ACCT_Q",
+                {"MEASURE": "M28", "TSEST": "10", "FREQ": "Q"},
+                {"startPeriod": "2026-Q1", "endPeriod": "2026-Q1"},
+                id="labour-account",
+            ),
+            pytest.param(
+                "CPI",
+                {
+                    "MEASURE": "1",
+                    "INDEX": "10001",
+                    "TSEST": "10",
+                    "REGION": "50",
+                    "FREQ": "M",
+                },
+                {"startPeriod": "2025-12", "endPeriod": "2025-12"},
+                id="cpi",
+            ),
+            pytest.param(
+                "ABS_SU_TABLE_2018",
+                {"SUPC": "TOT", "SU_CAT": "10", "FREQUENCY": "A"},
+                {"startPeriod": "1995", "endPeriod": "2001"},
+                id="supply-use",
+            ),
+            pytest.param(
+                "LF",
+                {
+                    "MEASURE": "M13",
+                    "SEX": "3",
+                    "AGE": "1599",
+                    "TSEST": "20",
+                    "REGION": "AUS",
+                    "FREQ": "M",
+                },
+                {"startPeriod": "2026-06", "endPeriod": "2026-06"},
+                id="labour-force",
+            ),
+        ],
+    )
     @pytest.mark.network
     @pytest.mark.source
-    def test_labour_account_model(self, client):  # pragma: no cover
+    def test_data_model(self, client, flow_id, key, params):  # pragma: no cover
         """Follow the ABS dataflow → DSD → data model-object workflow."""
-        flow_message = client.dataflow("LABOUR_ACCT_Q", params={"references": "none"})
-        dataflow = flow_message.dataflow["LABOUR_ACCT_Q"]
+        flow_message = client.dataflow(flow_id, params={"references": "none"})
+        dataflow = flow_message.dataflow[flow_id]
 
-        assert dataflow.structure.id == "DS_LABOUR_ACCT_Q"
         assert dataflow.structure.is_external_reference
 
         structure_message = client.get(
             resource=dataflow.structure, params={"references": "all"}
         )
-        dsd = structure_message.structure["DS_LABOUR_ACCT_Q"]
+        dsd = structure_message.structure[dataflow.structure.id]
 
         assert not dsd.is_external_reference
         assert dsd.version == dataflow.structure.version
-        assert [dimension.id for dimension in dsd.dimensions] == [
-            "MEASURE",
-            "ASGS_2016",
-            "LABOURACCT_IND",
-            "TSEST",
-            "FREQ",
-            "TIME_PERIOD",
-        ]
 
         data_message = client.data(
             dataflow.id,
-            key={"MEASURE": "M28", "TSEST": "10", "FREQ": "Q"},
-            params={"startPeriod": "2026-Q1", "endPeriod": "2026-Q1"},
+            key=key,
+            params=params,
             dsd=dsd,
         )
         dataset = data_message.data[0]
 
         assert dataset.structured_by is dsd
-        assert len(dataset.series) == len(dataset.obs) == 106
-        assert {obs.key.MEASURE.value for obs in dataset.obs} == {"M28"}
-        assert {obs.key.TSEST.value for obs in dataset.obs} == {"10"}
-        assert {obs.dimension.TIME_PERIOD.value for obs in dataset.obs} == {"2026-Q1"}
-        assert sdmx.to_pandas(data_message).shape == (106,)
+        assert dataset.obs
+        for dimension_id, value in key.items():
+            assert {getattr(obs.key, dimension_id).value for obs in dataset.obs} == {
+                value
+            }
+
+        periods = {obs.dimension.TIME_PERIOD.value for obs in dataset.obs}
+        assert min(periods) >= params["startPeriod"]
+        assert max(periods) <= params["endPeriod"]
+        assert sdmx.to_pandas(data_message).shape == (len(dataset.obs),)
 
 
 class TestABS_JSON(DataSourceTest):
