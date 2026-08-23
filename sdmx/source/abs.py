@@ -16,7 +16,7 @@ class Source(BaseSource):
         """Request ABS structural metadata explicitly as SDMX-ML."""
         super().modify_request_args(kwargs)
 
-        if kwargs.get("resource_type") is Resource.data:
+        if kwargs.get("resource_type") in (None, Resource.data):
             return
 
         headers = CaseInsensitiveDict(kwargs.get("headers", {}))
