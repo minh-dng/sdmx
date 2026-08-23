@@ -173,39 +173,14 @@ Address any failures before releasing.
 
      $ git checkout -v release/X.Y.Z
 
-2. Edit :file:`doc/whatsnew.rst`.
+2. Bump ``project.version`` in :file:`pyproject.toml`.
+
+3. Edit :file:`doc/whatsnew.rst`.
    Comment the heading "Next release", then insert another heading below it, at the same level, with the version number and date.
 
-3. Make a commit with a message like "Mark vX.Y.Z in doc/whatsnew".
+4. Open and merge a pull request. The build workflow verifies the distribution on the pull request; once merged, it creates tag ``vX.Y.Z`` and a GitHub Release containing the wheel and source distribution.
 
-4. Tag the version as a release candidate, i.e. with a ``rcN`` suffix, and push::
-
-    $ git tag vX.Y.ZrcN
-    $ git push --tags --set-upstream origin release/X.Y.Z
-
-5. Open a pull request with the title “Release vX.Y.Z” using this branch.
-   Check:
-
-   - at https://github.com/khaeru/sdmx/actions?query=workflow:publish that the workflow completes: the package builds successfully and is published to TestPyPI.
-   - at https://test.pypi.org/project/sdmx1/ that:
-
-      - The package can be downloaded, installed and run.
-      - The README is rendered correctly.
-
-   If needed, address any warnings or errors that appear and then continue from step (3), i.e. make (a) new commit(s) and tag, incrementing the release candidate number, e.g. from ``rc1`` to ``rc2``.
-
-6. Merge the PR using the “rebase and merge” method.
-
-7. (optional) Tag the release itself and push::
-
-    $ git tag vX.Y.Z
-    $ git push --tags origin main
-
-   This step (but *not* step (3)) can also be performed directly on GitHub; see (7), next.
-
-8. Visit https://github.com/khaeru/sdmx/releases and mark the new release: either using the pushed tag from (7), or by creating the tag and release simultaneously.
-
-9. Check at https://github.com/khaeru/sdmx/actions?query=workflow:publish and https://pypi.org/project/sdmx1/ that the distributions are published.
+5. Check the release at https://github.com/minh-dng/sdmx/releases and install its wheel in a clean environment.
 
 
 Internal code reference
