@@ -1,7 +1,7 @@
 Statistical Data and Metadata eXchange (SDMX) in Python
 *******************************************************
 
-:mod:`sdmx` (`‘sdmx1’ on PyPI <https://pypi.org/project/sdmx1>`_) is a Python implementation of the `SDMX <http://www.sdmx.org>`_  2.1 (`ISO 17369:2013 <https://www.iso.org/standard/52500.html>`_) and 3.0 standards for **Statistical Data and Metadata eXchange**.
+:mod:`sdmx` (distributed as ``sdmx1``) is a Python implementation of the `SDMX <http://www.sdmx.org>`_  2.1 (`ISO 17369:2013 <https://www.iso.org/standard/52500.html>`_) and 3.0 standards for **Statistical Data and Metadata eXchange**.
 The SDMX standards are developed and used by national statistical agencies, central banks, and international organisations.
 
 :mod:`sdmx` can be used to:

@@ -4,7 +4,18 @@ Installation
 Dependencies
 ============
 
-:mod:`sdmx` is a pure `Python <https://python.org>`_ package requiring Python 3.9 or higher, which can be installed:
+:mod:`sdmx` is a pure `Python <https://python.org>`_ package requiring Python 3.10 or higher.
+Install the current ``main`` branch directly from GitHub::
+
+    $ python -m pip install "sdmx1 @ git+https://github.com/minh-dng/sdmx.git"
+
+Each released version is available as a wheel attached to its GitHub Release::
+
+    $ python -m pip install "https://github.com/minh-dng/sdmx/releases/download/vX.Y.Z/sdmx1-X.Y.Z-py3-none-any.whl"
+
+Replace ``X.Y.Z`` with the release version.
+
+Python can be installed:
 
 - from `the Python website <https://www.python.org/downloads/>`_, or
 - using a scientific Python distribution that includes other packages useful for data analysis, such as
@@ -25,42 +36,24 @@ Optional dependencies for extra features
 - for ``docs``, to build the documentation: `sphinx <https://sphinx-doc.org>`_ and `IPython <https://ipython.org>`_.
 - for ``tests``, to run the test suite: `pytest <https://pytest.org>`_ and others.
 
-Instructions
-============
-
-0. (optional) If using Anaconda, use :program:`source activate [ENV]` to activate the environment in which to install :mod:`sdmx`.
-1. From the command line, issue::
-
-    $ pip install sdmx1
-
-   To also install optional dependencies, use commands like::
-
-    $ pip install sdmx1[cache]             # just requests-cache
-    $ pip install sdmx1[cache,docs,tests]  # all extras
-
 From source
 -----------
 
 1. Download the latest code:
 
-   - `from PyPI <https://pypi.org/project/sdmx1/#files>`_,
-   - `from Github <https://github.com/khaeru/sdmx>`_ as a ZIP archive, or
+   - `from GitHub <https://github.com/minh-dng/sdmx>`_ as a ZIP archive, or
    - by cloning the Github repository::
 
-     $ git clone git@github.com:khaeru/sdmx.git
+     $ git clone git@github.com:minh-dng/sdmx.git
 
 2. In the package directory, issue::
 
-    $ pip install --editable .
-
-   or::
-
-    $ python setup.py install
+    $ python -m pip install --editable .
 
    To also install optional dependencies, use commands like::
 
-    $ pip install --editable .[cache]             # just requests-cache
-    $ pip install --editable .[cache,docs,tests]  # all extras
+    $ python -m pip install --editable .[cache]             # just requests-cache
+    $ python -m pip install --editable .[cache,docs,tests]  # all extras
 
 
 .. note:: The pip :program:`--editable` flag is recommended for development, so that changes to your code are reflected the next time :mod:`sdmx` is imported.
