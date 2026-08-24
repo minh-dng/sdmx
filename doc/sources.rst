@@ -14,7 +14,7 @@ Or, an agency might operate a data source that only contains information they pr
 :mod:`sdmx` has built-in support for a number of data sources, each identified with a string such as :py:`"ABS"`.
 Use :meth:`list_sources` to list these, or see the file :file:`sources.json` in the package source code.
 
-https://khaeru.github.io/sdmx displays a summary of every SDMX-REST API endpoint for every data source known to :mod:`sdmx`; this summary is `updated daily by an automatic run <https://github.com/khaeru/sdmx/actions/workflows/sources.yaml>`_ of the test suite.
+https://minh-dng.github.io/sdmx displays a summary of every SDMX-REST API endpoint for every data source known to :mod:`sdmx`; this summary is `updated daily by an automatic run <https://github.com/minh-dng/sdmx/actions/workflows/sources.yaml>`_ of the test suite.
 Read the following sections, for more details on how the limitations and quirks of particular sources are handled.
 
 :mod:`sdmx` also supports adding other data sources; see :meth:`add_source` and :class:`~.source.Source`.
@@ -54,7 +54,7 @@ Handling and testing limitations and (un)supported endpoints
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 As of version 2.5.0, :mod:`sdmx` handles service limitations as follows.
-Please `open an issue <https://github.com/khaeru/sdmx/issues/new>`__ if the supported endpoints or behaviour of a particular service appear to have changed.
+Please `open an issue <https://github.com/minh-dng/sdmx/issues/new>`__ if the supported endpoints or behaviour of a particular service appear to have changed.
 
 - :attr:`.source.Source.supports` lists endpoints/:class:`resources <.Resource>` that are not supported by *any* known web service.
 - :file:`sources.json` contains ``supports: {"[resource]": false}`` for any endpoint where the service returns an HTTP **404 Not found** response code.
@@ -79,7 +79,7 @@ Please `open an issue <https://github.com/khaeru/sdmx/issues/new>`__ if the supp
 .. _source-matrix:
 
 - Because of the large number of services and endpoints, this matrix of support is only periodically updated.
-  https://khaeru.github.io/sdmx includes all endpoints known to return a reply, even if the reply is an error message of some sort.
+  https://minh-dng.github.io/sdmx includes all endpoints known to return a reply, even if the reply is an error message of some sort.
 
 SDMX-JSON—only services
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -655,7 +655,7 @@ SDMX-ML or SDMX-JSON —
      dsd = msg.structure[0]
 
   The resulting object `dsd` can be passed as an argument to a :meth:`.Client.get` data query.
-  See the `sdmx test suite <https://github.com/khaeru/sdmx/blob/main/sdmx/tests/test_sources.py>`_ for an example.
+  See the `sdmx test suite <https://github.com/minh-dng/sdmx/blob/main/sdmx/tests/test_sources.py>`_ for an example.
 
 
 .. _UNSD:

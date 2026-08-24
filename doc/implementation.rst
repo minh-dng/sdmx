@@ -81,8 +81,8 @@ For the current Python package, :mod:`sdmx`:
   - Writing SDMX-ML 3.0.0.
   - Reading and writing SDMX-JSON 2.0 (see :ref:`sdmx-json`).
 
-  Follow the :doc:`whatsnew` and GitHub issues and pull requests with the `'sdmx-3' label <https://github.com/khaeru/sdmx/labels/sdmx-3>`__ for details.
-  Please `open an issue <https://github.com/khaeru/sdmx/issues>`_ on GitHub to report examples of real-world SDMX 3.0.0 web services examples and specimens of data that can be added.
+  Follow the :doc:`whatsnew` and GitHub issues and pull requests with the `'sdmx-3' label <https://github.com/minh-dng/sdmx/labels/sdmx-3>`__ for details.
+  Please `open an issue <https://github.com/minh-dng/sdmx/issues>`_ on GitHub to report examples of real-world SDMX 3.0.0 web services examples and specimens of data that can be added.
 
 .. _im:
 

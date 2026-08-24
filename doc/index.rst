@@ -59,7 +59,7 @@ Contributing and getting help
   (`here <https://github.com/khaeru/sdmx/blob/main/CONTRIBUTING.md>`__)
   and/or :doc:`dev` linked above.
 - Report issues, suggest features, or browse the source code on
-  `GitHub <https://github.com/khaeru/sdmx>`_.
+  `GitHub <https://github.com/minh-dng/sdmx>`_.
 - Join the ``#sdmx1`` `Internet Relay Chat (IRC) <https://en.wikipedia.org/wiki/IRC>`_ channel
   on `irc.libera.chat <https://libera.chat>`_.
 

@@ -70,7 +70,7 @@ class URL(common.URL):
             Although it is described in the standards, there are no known SDMX REST data
             sources that support this API endpoint to confirm behaviour. If you are
             aware of one, please `open an issue
-            <https://github.com/khaeru/sdmx/issues/new>`_.
+            <https://github.com/minh-dng/sdmx/issues/new>`_.
         """
         raise NotImplementedError
 
