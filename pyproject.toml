@@ -54,9 +54,9 @@ tests = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/khaeru/sdmx"
-Repository = "https://github.com/khaeru/sdmx"
-Documentation = "https://sdmx1.readthedocs.io/en/latest"
+Homepage = "https://github.com/minh-dng/sdmx"
+Repository = "https://github.com/minh-dng/sdmx"
+Documentation = "https://minh-dng.github.io/sdmx/"
 
 [tool.coverage.run]
 omit = [

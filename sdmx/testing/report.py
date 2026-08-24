@@ -47,7 +47,7 @@ tr.result > td.not-implemented {
 <h1>SDMX data sources</h1>
 <p>
   This page shows the results of automatic tests run for the <a
-  href="https://github.com/khaeru/sdmx"><code>sdmx1</code></a> Python package. The
+  href="https://github.com/minh-dng/sdmx"><code>sdmx1</code></a> Python package. The
   package includes built-in support for the following known SDMX REST data sources and
   API endpoints.
 </p>
@@ -88,7 +88,7 @@ tr.result > td.not-implemented {
   <td style="text-align: left">
     <p>
       Known/expected failure. See GitHub for
-      <a href="https://github.com/khaeru/sdmx/labels/data-source">any related issue(s)<a>.
+      <a href="https://github.com/minh-dng/sdmx/labels/data-source">any related issue(s)<a>.
     </p>
     <p>Includes the case where the data source is known to not implement this API
     endpoint, but replies incorrectly with a 4XX (error) HTTP status code instead of

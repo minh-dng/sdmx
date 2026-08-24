@@ -36,7 +36,8 @@ rst_prolog = """
 
 # -- Options for HTML output -----------------------------------------------------------
 
-GH_URL = "https://github.com/khaeru/sdmx"
+# This fork's repository; drives the footer GitHub icon and view/edit buttons.
+GH_URL = "https://github.com/minh-dng/sdmx"
 
 html_theme = "furo"
 
@@ -64,8 +65,8 @@ html_title = "sdmx1"
 # -- Options for sphinx.ext.extlinks ---------------------------------------------------
 
 extlinks = {
-    "issue": ("https://github.com/khaeru/sdmx/issues/%s", "#%s"),
-    "pull": ("https://github.com/khaeru/sdmx/pull/%s", "PR #%s"),
+    "issue": ("https://github.com/minh-dng/sdmx/issues/%s", "#%s"),
+    "pull": ("https://github.com/minh-dng/sdmx/pull/%s", "PR #%s"),
     "gh-user": ("https://github.com/%s", "@%s"),
 }
 
@@ -93,7 +94,7 @@ def linkcode_resolve(domain, info):
         return None
     filename = info["module"].replace(".", "/")
     filename = LINKCODE_ALIAS.get(filename, filename)
-    return f"https://github.com/khaeru/sdmx/tree/main/{filename}.py"
+    return f"https://github.com/minh-dng/sdmx/tree/main/{filename}.py"
 
 
 # -- Options for sphinx.ext.napoleon ---------------------------------------------------

@@ -4,8 +4,8 @@ Development
 This page describes the development of :mod:`sdmx`.
 Contributions are welcome!
 
-- For current development priorities, see the list of `GitHub milestones <https://github.com/khaeru/sdmx/milestones>`_ and issues/PRs targeted to each.
-- For wishlist features, see issues on GitHub tagged `‘enh’ <https://github.com/khaeru/sdmx/labels/enh>`_ or `‘wishlist’ <https://github.com/khaeru/sdmx/labels/wishlist>`_.
+- For current development priorities, see the list of `GitHub milestones <https://github.com/minh-dng/sdmx/milestones>`_ and issues/PRs targeted to each.
+- For wishlist features, see issues on GitHub tagged `‘enh’ <https://github.com/minh-dng/sdmx/labels/enh>`_ or `‘wishlist’ <https://github.com/minh-dng/sdmx/labels/wishlist>`_.
 
 .. _code-style:
 
@@ -31,7 +31,7 @@ Code style
 
   These will ensure that each commit is compliant with the code style.
 
-- The `pytest.yaml GitHub Actions workflow <https://github.com/khaeru/sdmx/actions/workflows/pytest.yaml>`_ checks code quality for pull requests and commits.
+- The `pytest.yaml GitHub Actions workflow <https://github.com/minh-dng/sdmx/actions/workflows/pytest.yaml>`_ checks code quality for pull requests and commits.
   This check **must** pass for pull requests to be merged.
 - Follow `the 7 rules of a great Git commit message <https://chris.beams.io/posts/git-commit/#seven-rules>`_.
 - Write docstrings in the `numpydoc <https://numpydoc.readthedocs.io/en/latest/format.html>`_ style.
@@ -164,7 +164,7 @@ Releasing
 
 Before releasing, check:
 
-- https://github.com/khaeru/sdmx/actions?query=workflow:test+branch:main to ensure that the push and scheduled builds are passing.
+- https://github.com/minh-dng/sdmx/actions?query=workflow:test+branch:main to ensure that the push and scheduled builds are passing.
 - https://readthedocs.org/projects/sdmx1/builds/ to ensure that the docs build is passing.
 
 Address any failures before releasing.
