@@ -55,7 +55,7 @@ Contributing and getting help
 
 - Ask usage questions (“How do I?”) on `Stack Overflow <https://stackoverflow.com/questions/tagged/python-sdmx+or+sdmx>`_ using the tags ``[sdmx] [python]``.
 - Report bugs, suggest features, or view the source code on
-  `GitHub <https://github.com/khaeru/sdmx>`_.
+  `GitHub <https://github.com/minh-dng/sdmx>`_.
 - The older `sdmx-python <https://groups.google.com/forum/?hl=en#!forum/sdmx-python>`_ Google Group may have answers for some questions.
 
 
