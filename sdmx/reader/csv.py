@@ -4,7 +4,6 @@ import re
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import MutableSequence, Sequence
-from itertools import zip_longest
 from typing import TYPE_CHECKING
 
 import sdmx.message
@@ -91,17 +90,23 @@ class Reader(BaseReader):
 
     def handle_row(self, row: list[str]) -> None:
         """Handle a single CSV row."""
+        if len(row) != len(self.handlers):
+            raise ValueError(
+                f"Invalid SDMX-CSV row: expected {len(self.handlers)} fields, got {len(row)}"
+            )
         obs = v30.Observation(
             dimension=v30.Key(),
             attached_attribute={"__TARGET": v30.AttributeValue(value=[])},
         )
 
-        for h, v in zip_longest(self.handlers, row):
+        for h, v in zip(self.handlers, row, strict=True):
             h(obs, v)
 
         # Remove the "__TARGET" annotation and construct a key describing the data set
         # to which this observation belongs
         target = tuple(obs.attached_attribute.pop("__TARGET").value)
+        if len(target) == 2:
+            target += ("I",)
 
         self._observations[target].append(obs)
 
@@ -121,7 +126,7 @@ class Reader(BaseReader):
         # Columns in fixed order
 
         if match := re.fullmatch(r"STRUCTURE(\[(?P<delimiter_sub>.)\])?", header[0]):
-            self.options.delimiter_sub = match.groupdict().get("delimeter_sub", None)
+            self.options.delimiter_sub = match.groupdict().get("delimiter_sub", None)
         else:
             raise ValueError(
                 f"Invalid SDMX-CSV 2.0.0: {header[0]!r} in line 1, field 1; "
@@ -187,7 +192,8 @@ class Reader(BaseReader):
             self.options.custom_columns.append(h)
 
         self.handlers = tuple(filter(None, handlers))
-        assert len(self.handlers) == len(header)
+        if len(self.handlers) != len(header):
+            raise ValueError("Invalid SDMX-CSV header: not every field has a handler")
 
 
 class DataFrameConverter(Converter):
@@ -276,7 +282,23 @@ class StoreTarget(Handler):
         self.allowable = allowable
 
     def __call__(self, obs, value):
-        assert value in self.allowable if self.allowable else True
+        if not isinstance(value, str) or not value:
+            raise ValueError(
+                f"Invalid target value {value!r}; expected a non-empty string"
+            )
+        if self.allowable:
+            value = next(
+                (
+                    candidate
+                    for candidate in self.allowable
+                    if candidate.casefold() == value.casefold()
+                ),
+                value,
+            )
+            if value not in self.allowable:
+                raise ValueError(
+                    f"Invalid target value {value!r}; expected one of {sorted(self.allowable)!r}"
+                )
         obs.attached_attribute["__TARGET"].value.append(value)
 
 
