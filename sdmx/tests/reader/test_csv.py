@@ -57,6 +57,68 @@ dataflow,ESTAT:NA_MAIN(1.6.0),I,A,B,2014-02,10.8,Y,"Normal, special and other va
 
 
 class TestReader:
+    @pytest.mark.parametrize("target", ["DATAFLOW", "DataProvision", "datastructure"])
+    def test_case_insensitive_structure_target(self, target: str) -> None:
+        content = f"""STRUCTURE,STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE
+{target},ESTAT:NA_MAIN(1.6.0),i,A,B,2014-01,12.4
+""".encode()
+
+        result = Reader().convert(BytesIO(content), structure=get_dfd())
+
+        assert result.data[0].obs[0].value == "12.4"
+        assert result.data[0].action is common.ActionType.information
+
+    def test_missing_action_column_defaults_to_information(self) -> None:
+        content = b"""STRUCTURE,STRUCTURE_ID,DIM_1,DIM_2,DIM_3,OBS_VALUE
+dataflow,ESTAT:NA_MAIN(1.6.0),A,B,2014-01,12.4
+"""
+
+        result = Reader().convert(BytesIO(content), structure=get_dfd())
+
+        assert result.data[0].action is common.ActionType.information
+
+    def test_invalid_structure_target(self) -> None:
+        content = b"""STRUCTURE,STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE\nINVALID,ESTAT:NA_MAIN(1.6.0),I,A,B,2014-01,12.4\n"""
+
+        with pytest.raises(ValueError, match="Invalid target value 'INVALID'"):
+            Reader().convert(BytesIO(content), structure=get_dfd())
+
+    def test_missing_action_target(self) -> None:
+        content = b"""STRUCTURE,STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE
+dataflow,ESTAT:NA_MAIN(1.6.0),,A,B,2014-01,12.4
+"""
+
+        with pytest.raises(ValueError, match="Invalid target value ''"):
+            Reader().convert(BytesIO(content), structure=get_dfd())
+
+    def test_missing_structure_id_target(self) -> None:
+        content = b"""STRUCTURE,STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE
+dataflow,,I,A,B,2014-01,12.4
+"""
+
+        with pytest.raises(
+            ValueError, match="Invalid target value ''; expected a non-empty string"
+        ):
+            Reader().convert(BytesIO(content), structure=get_dfd())
+
+    def test_short_row(self) -> None:
+        content = b"""STRUCTURE,STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE
+dataflow,ESTAT:NA_MAIN(1.6.0),I,A,B,2014-01
+"""
+
+        with pytest.raises(ValueError, match="expected 7 fields, got 6"):
+            Reader().convert(BytesIO(content), structure=get_dfd())
+
+    def test_subdelimiter_header(self) -> None:
+        reader = Reader()
+        content = b"""STRUCTURE[+],STRUCTURE_ID,ACTION,DIM_1,DIM_2,DIM_3,OBS_VALUE
+dataflow,ESTAT:NA_MAIN(1.6.0),I,A,B,2014-01,12.4
+"""
+
+        reader.convert(BytesIO(content), structure=get_dfd())
+
+        assert reader.options.delimiter_sub == "+"
+
     @pytest.mark.parametrize(
         "mt, expected",
         [
