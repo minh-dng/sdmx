@@ -46,13 +46,6 @@ Replace `X.Y.Z` with the release version.
 See [the documentation](https://minh-dng.github.io/sdmx/) for `main`, built
 automatically by the docs workflow on every push.
 
-## License
-
-Copyright 2014–2026, [sdmx1 developers](https://github.com/minh-dng/sdmx/graphs/contributors).
-
-Licensed under the Apache License, Version 2.0. You may obtain a copy from the
-[LICENSE](LICENSE) file or <http://www.apache.org/licenses/LICENSE-2.0>.
-
 ## History
 
 `sdmx` is a fork of [pandaSDMX](https://github.com/dr-leo/pandaSDMX), in turn a
