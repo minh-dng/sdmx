@@ -68,7 +68,7 @@ class Client:
     session: requests.Session
 
     # Stored keyword arguments "allow_redirects" and "timeout" for pre-requests.
-    _send_kwargs: dict[str, Any] = {}
+    _send_kwargs: dict[str, Any]
 
     def __init__(
         self,
@@ -92,6 +92,9 @@ class Client:
         else:
             # Create an HTTP Session object to reuse a connection for multiple requests
             self.session = Session(**session_opts)
+
+        # Per-instance, so that Client.get(…) kwargs of one Client do not leak to others
+        self._send_kwargs = {}
 
         if log_level:
             message = "Client(…, log_level=…) parameter"
@@ -472,8 +475,12 @@ class Client:
                 pass
 
         try:
-            # Send the request
-            response = self.session.send(req_prepared, **self._send_kwargs)
+            # Send the request; apply the Session timeout unless overridden per request
+            send_kwargs = {
+                "timeout": getattr(self.session, "timeout", None),
+                **self._send_kwargs,
+            }
+            response = self.session.send(req_prepared, **send_kwargs)
             response.raise_for_status()
         except requests.exceptions.ConnectionError as e:
             raise e from None

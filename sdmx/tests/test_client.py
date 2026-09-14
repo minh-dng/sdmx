@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 import pytest
@@ -49,6 +49,35 @@ def test_read_sdmx(tmp_path: "Path", specimen: "SpecimenCollection") -> None:
     # Using the format= argument forces a certain reader to be used
     with pytest.raises(json.JSONDecodeError):
         sdmx.read_sdmx(bad_file, format="JSON")
+
+
+def test_send_timeout(monkeypatch, testsource: str) -> None:
+    """The Session's timeout is applied to every request sent by Client."""
+    client = sdmx.Client(testsource)
+
+    captured: dict = {}
+
+    def spy(request, **kwargs):
+        captured.update(kwargs)
+        raise RuntimeError  # Interrupt before any network access
+
+    monkeypatch.setattr(client.session, "send", spy)
+
+    # Default: the Session's timeout attribute
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == 30.0
+
+    # A changed Session timeout is honoured
+    cast("sdmx.session.Session", client.session).timeout = 600.0
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == 600.0
+
+    # A per-request timeout= argument to get() takes precedence
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL", timeout=123)
+    assert captured["timeout"] == 123
 
 
 class TestClient:
