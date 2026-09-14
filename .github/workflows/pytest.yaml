@@ -34,6 +34,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.os }}-py${{ matrix.python-version }}
+    timeout-minutes: 30
 
     steps:
     - uses: actions/checkout@v6
@@ -77,3 +78,34 @@ jobs:
         # lookup-only: true
     - name: Run pre-commit
       run: uvx pre-commit run --all-files --show-diff-on-failure --color=always
+
+  # Scheduled only: live-network tests are too flaky to gate push/PR builds. A failure
+  # here does not fail the run (continue-on-error) and so does not trigger notifications.
+  network:
+    name: Network tests
+    if: github.event_name == 'schedule'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v6
+    - uses: astral-sh/setup-uv@v8.0.0
+      with:
+        activate-environment: true
+        python-version: "3.14"
+    - name: Install the package and dependencies
+      run: uv pip install .[tests]
+    - name: Run tests marked 'network'
+      continue-on-error: true
+      run: |
+        uv run --no-sync \
+          pytest \
+          -m "network and not source" \
+          --sdmx-fetch-data \
+          --color=yes --durations=20 -ra --verbose \
+          --cov-report=xml \
+          --numprocesses=auto
+      shell: bash
+    - name: Upload test coverage to Codecov.io
+      uses: codecov/codecov-action@v6
