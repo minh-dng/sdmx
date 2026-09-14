@@ -314,7 +314,8 @@ def session_with_pytest_cache(pytestconfig: pytest.Config) -> Iterator[Session]:
     is populated.
     """
     p = pytestconfig.cache.mkdir("sdmx-requests-cache")
-    yield Session(cache_name=str(p), backend="filesystem")
+    # Longer-than-default timeout: some services (e.g. ISTAT) take minutes to respond
+    yield Session(cache_name=str(p), backend="filesystem", timeout=600.0)
 
 
 @pytest.fixture(scope="session")
