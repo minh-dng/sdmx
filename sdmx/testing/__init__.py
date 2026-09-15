@@ -295,7 +295,7 @@ def mock_gh_api() -> Iterator[responses.RequestsMock]:
     mock = responses.RequestsMock(assert_all_requests_are_fired=False)
     mock.add_passthru(re.compile(rf"{base}/zipball/\w+"))
     mock.add_passthru(re.compile(r"https://codeload.github.com/\w+"))
-    mock.add_passthru(re.compile(r"http://www.w3.org/\w+"))
+    mock.add_passthru(re.compile(r"https?://www\.w3\.org/\w+"))
 
     for v in "2.1", "3.0", "3.0.0":
         mock.get(
