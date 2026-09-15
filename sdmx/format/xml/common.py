@@ -204,6 +204,56 @@ def construct_schema(
     return etree.XMLSchema(schema_etree)
 
 
+def _fetch_with_retries(url: str, headers: "Mapping[str, str] | None" = None):
+    """Retrieve `url` with :func:`requests.get`, retrying on connection errors.
+
+    Used for downloading schema files, where CI runners occasionally see refused
+    connections or truncated responses. The response content is fully read within the
+    retry block, so a truncated transfer is retried instead of producing a corrupt
+    file. Each request has an explicit timeout, so a stalled server cannot block
+    indefinitely.
+    """
+    import time
+
+    import requests
+
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.get(url=url, headers=headers, timeout=30.0)
+            resp.content  # Force read; e.g. truncation raises here
+            return resp
+        except requests.exceptions.RequestException as e:
+            if attempt == attempts:
+                raise
+            log.info(f"{e!r} fetching {url} (attempt {attempt} of {attempts})")
+            time.sleep(attempt)
+    raise AssertionError  # pragma: no cover
+
+
+def _fetch_xhtml_schema(target: Path, force: bool = False) -> None:
+    """Fetch a copy of the XHTML1 XSD, which is missing from the SDMX bundle.
+
+    Some responses are truncated, or non-XML (e.g. rate-limit pages); retry and check
+    the content before writing, since a corrupt file causes obscure
+    :class:`lxml.etree.XMLSchemaParseError` messages later.
+    """
+    import time
+
+    if target.exists() and not force:
+        return
+
+    url = "https://www.w3.org/2002/08/xhtml/xhtml1-strict.xsd"
+    for attempt in range(1, 4):
+        resp = _fetch_with_retries(url)
+        if resp.content.lstrip().startswith(b"<?xml"):
+            target.write_bytes(resp.content)
+            return
+        log.info(f"Non-XML content from www.w3.org (attempt {attempt})")
+        time.sleep(attempt)
+    raise RuntimeError(f"Did not retrieve valid XML from {url}")
+
+
 def _extracted_zipball(version: Version, force: bool = False) -> Path:
     """Retrieve, cache, and extract the SDMX-ML schemas for `version`.
 
@@ -221,7 +271,6 @@ def _extracted_zipball(version: Version, force: bool = False) -> Path:
         Path to the root folder of the unpacked archive.
     """
     import platformdirs
-    import requests
 
     # Map SDMX-ML schema versions to repo paths
     version_path = {Version["2.1"]: "v2.1", Version["3.0.0"]: "v3.0.0"}[version]
@@ -232,7 +281,7 @@ def _extracted_zipball(version: Version, force: bool = False) -> Path:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    release_json = requests.get(
+    release_json = _fetch_with_retries(
         url=f"{url_base}/releases/tags/{version_path}", headers=headers
     ).json()
     try:
@@ -243,7 +292,7 @@ def _extracted_zipball(version: Version, force: bool = False) -> Path:
         log.debug(f"Fall back to {zipball_url}")
 
     # Make a request for the zipball
-    resp = requests.get(url=zipball_url, headers=headers)
+    resp = _fetch_with_retries(zipball_url, headers)
 
     # Filename indicated by the HTTP response
     filename = resp.headers["content-disposition"].split("filename=")[-1]
@@ -273,8 +322,7 @@ def _extracted_zipball(version: Version, force: bool = False) -> Path:
             zf.extractall(target.parent)
 
     # Fetch a copy of the XHTML1 XSD, which is missing from the SDMX bundle
-    resp = requests.get(url="http://www.w3.org/2002/08/xhtml/xhtml1-strict.xsd")
-    result.joinpath("schemas", "xhtml1-strict.xsd").write_bytes(resp.content)
+    _fetch_xhtml_schema(result.joinpath("schemas", "xhtml1-strict.xsd"), force)
 
     return result
 
