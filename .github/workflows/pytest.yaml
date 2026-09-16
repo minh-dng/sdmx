@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
   schedule:  # 05:00 UTC = 06:00 CET = 07:00 CEST
   - cron: "0 5 * * *"
 
@@ -83,7 +84,7 @@ jobs:
   # here does not fail the run (continue-on-error) and so does not trigger notifications.
   network:
     name: Network tests
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
