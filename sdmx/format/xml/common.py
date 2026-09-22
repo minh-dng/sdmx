@@ -1,3 +1,4 @@
+import importlib
 import logging
 import re
 import zipfile
@@ -6,14 +7,17 @@ from functools import lru_cache
 from itertools import chain
 from operator import itemgetter
 from pathlib import Path
-from shutil import copytree
-from typing import IO, cast
+from shutil import copyfile, copytree, rmtree
+from typing import IO, TYPE_CHECKING, cast
 
 from lxml import etree
 from lxml.etree import QName
 
 from sdmx.format import Version
 from sdmx.format.common import Format
+
+if TYPE_CHECKING:
+    import requests
 
 log = logging.getLogger(__name__)
 
@@ -204,14 +208,31 @@ def construct_schema(
     return etree.XMLSchema(schema_etree)
 
 
-def _fetch_with_retries(url: str, headers: "Mapping[str, str] | None" = None):
-    """Retrieve `url` with :func:`requests.get`, retrying on connection errors.
+#: HTTP status codes indicating a transient failure, and so worth retrying: request
+#: timeout, rate limited, and server errors.
+_TRANSIENT_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
+
+#: XSD documents bundled with the package (see the LICENSE alongside them) and copied
+#: alongside the downloaded SDMX-ML schemas.
+_BUNDLED_SCHEMAS = ("xhtml1-strict.xsd", "xml.xsd")
+
+
+def _fetch_with_retries(
+    url: str, headers: "Mapping[str, str] | None" = None
+) -> "requests.Response":
+    """Retrieve `url` with :func:`requests.get`, retrying transient failures.
 
     Used for downloading schema files, where CI runners occasionally see refused
-    connections or truncated responses. The response content is fully read within the
-    retry block, so a truncated transfer is retried instead of producing a corrupt
-    file. Each request has an explicit timeout, so a stalled server cannot block
-    indefinitely.
+    connections, truncated responses, rate limiting, or server errors. Transport
+    exceptions and transient HTTP status codes (see :data:`_TRANSIENT_STATUSES`) are
+    retried. The response content is fully read within the retry block, so a truncated
+    transfer is retried instead of producing a corrupt file. Each request has an
+    explicit timeout, so a stalled server cannot block indefinitely.
+
+    Raises
+    ------
+    requests.HTTPError
+        if the final response has an error (non-2xx) status code.
     """
     import time
 
@@ -222,58 +243,52 @@ def _fetch_with_retries(url: str, headers: "Mapping[str, str] | None" = None):
         try:
             resp = requests.get(url=url, headers=headers, timeout=30.0)
             resp.content  # Force read; e.g. truncation raises here
-            return resp
         except requests.exceptions.RequestException as e:
             if attempt == attempts:
                 raise
             log.info(f"{e!r} fetching {url} (attempt {attempt} of {attempts})")
             time.sleep(attempt)
+            continue
+
+        if resp.status_code in _TRANSIENT_STATUSES and attempt < attempts:
+            log.info(
+                f"HTTP {resp.status_code} fetching {url} "
+                f"(attempt {attempt} of {attempts})"
+            )
+            time.sleep(attempt)
+            continue
+
+        resp.raise_for_status()
+        return resp
     raise AssertionError  # pragma: no cover
 
 
-def _fetch_xhtml_schema(target: Path, force: bool = False) -> None:
-    """Fetch a copy of the XHTML1 XSD, which is missing from the SDMX bundle.
+def _copy_bundled_schemas(target_dir: Path) -> None:
+    """Copy the bundled XSD documents (see the LICENSE alongside them) to `target_dir`.
 
-    Some responses are truncated, or non-XML (e.g. rate-limit pages); retry and check
-    the content before writing, since a corrupt file causes obscure
-    :class:`lxml.etree.XMLSchemaParseError` messages later.
+    The SDMX-ML schemas reference XHTML structured content, so SDMXMessage.xsd must be
+    accompanied by a copy of :file:`xhtml1-strict.xsd`, which itself imports
+    :file:`xml.xsd`. Both files (copyright 1998-2002 W3C, redistributed under the W3C
+    Software and Document License) are bundled with the package, so no network access
+    is required.
     """
-    import time
-
-    if target.exists() and not force:
-        return
-
-    url = "https://www.w3.org/2002/08/xhtml/xhtml1-strict.xsd"
-    for attempt in range(1, 4):
-        resp = _fetch_with_retries(url)
-        if resp.content.lstrip().startswith(b"<?xml"):
-            target.write_bytes(resp.content)
-            return
-        log.info(f"Non-XML content from www.w3.org (attempt {attempt})")
-        time.sleep(attempt)
-    raise RuntimeError(f"Did not retrieve valid XML from {url}")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for name in _BUNDLED_SCHEMAS:
+        source = importlib.resources.files("sdmx.format.xml").joinpath(
+            f"schemas/{name}"
+        )
+        # Copy unconditionally, so that a corrupt file in an existing cache is repaired
+        with importlib.resources.as_file(source) as path:
+            copyfile(path, target_dir.joinpath(name))
 
 
-def _extracted_zipball(version: Version, force: bool = False) -> Path:
-    """Retrieve, cache, and extract the SDMX-ML schemas for `version`.
+def _download_zipball(target: Path, version_path: str) -> None:
+    """Download the SDMX-ML schemas zipball for `version_path` to `target`.
 
-    1. Query the GitHub REST API to identify a URL for the `version` in zipball format.
-    2. Download and cache the zipball. The file is not downloaded if it already exists.
-    3. Unpack the archive.
-
-    Actions (2) and (3) are performed in the user's cache directory (for instance,
-    :file:`$HOME/.cache/sdmx/`). :func:`install_schemas` handles copying the extracted
-    files to other locations.
-
-    Returns
-    -------
-    Path
-        Path to the root folder of the unpacked archive.
+    The download is written to a temporary path, validated, and then moved to `target`,
+    so that a concurrent reader never sees a partial file.
     """
-    import platformdirs
-
-    # Map SDMX-ML schema versions to repo paths
-    version_path = {Version["2.1"]: "v2.1", Version["3.0.0"]: "v3.0.0"}[version]
+    import os
 
     # Check the latest release to get the URL to the schema zip
     url_base = "https://api.github.com/repos/sdmx-twg/sdmx-ml"
@@ -294,35 +309,102 @@ def _extracted_zipball(version: Version, force: bool = False) -> Path:
     # Make a request for the zipball
     resp = _fetch_with_retries(zipball_url, headers)
 
-    # Filename indicated by the HTTP response
-    filename = resp.headers["content-disposition"].split("filename=")[-1]
-    # Location for the cached zipball
-    target = platformdirs.user_cache_path("sdmx").joinpath(filename)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # NB the version_path contains dots, so Path.with_suffix() would truncate the name
+    tmp = target.parent.joinpath(f"{target.name}.tmp{os.getpid()}")
+    tmp.write_bytes(resp.content)
 
-    # Avoid downloading if the same file is already present
-    if target.exists() and not force:
-        log.info(f"Use existing {target}")
-        resp.close()
-    else:
-        # Write response content to file
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(resp.content)
+    # Validate before moving into place, so that a corrupt download never replaces the
+    # cached zipball
+    try:
+        with zipfile.ZipFile(tmp):
+            pass
+    except zipfile.BadZipFile:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(target)
 
-    with zipfile.ZipFile(target) as zf:
-        # The first name list is the top-level directory within the file
-        result = target.parent.joinpath(zf.namelist()[0])
+
+def _extract_zipball(zipball: Path, force: bool = False) -> Path:
+    """Extract the schemas zipball at `zipball`, unless already extracted.
+
+    Returns
+    -------
+    Path
+        Path to the root folder of the unpacked archive.
+    """
+    import os
+
+    with zipfile.ZipFile(zipball) as zf:
+        # The top-level directory within the archive; the first name list entry is
+        # either that directory or a file within it
+        top = zf.namelist()[0].split("/")[0]
+        result = zipball.parent.joinpath(top)
 
         if result.exists() and not force:
             log.info(
                 f"Destination {result} exists → skip extraction.\n"
                 "Remove the directory or give force=True to override"
             )
-        else:
-            # Unpack the entire archive
-            zf.extractall(target.parent)
+            return result
 
-    # Fetch a copy of the XHTML1 XSD, which is missing from the SDMX bundle
-    _fetch_xhtml_schema(result.joinpath("schemas", "xhtml1-strict.xsd"), force)
+        # Extract to a temporary directory, then move the archive's top-level directory
+        # into place, so that a concurrent reader never sees a partially extracted
+        # archive
+        tmp = zipball.parent.joinpath(f"{zipball.name}.tmp{os.getpid()}")
+        rmtree(tmp, ignore_errors=True)
+        zf.extractall(tmp)
+        if result.exists():
+            rmtree(result)
+        tmp.joinpath(top).rename(result)
+        rmtree(tmp, ignore_errors=True)
+
+    return result
+
+
+def _extracted_zipball(version: Version, force: bool = False) -> Path:
+    """Retrieve, cache, and extract the SDMX-ML schemas for `version`.
+
+    1. Identify a URL for the `version` in zipball format, using the GitHub REST API.
+    2. Download and cache the zipball. The file is not downloaded if it already exists.
+    3. Unpack the archive.
+
+    Actions (2) and (3) are performed in the user's cache directory (for instance,
+    :file:`$HOME/.cache/sdmx/`). Each is written atomically: a partially downloaded or
+    partially extracted set of files is never visible to another call, and a corrupt
+    cached zipball is replaced on the next call. :func:`install_schemas` handles copying
+    the extracted files to other locations.
+
+    Returns
+    -------
+    Path
+        Path to the root folder of the unpacked archive.
+    """
+    import platformdirs
+
+    # Map SDMX-ML schema versions to repo paths
+    version_path = {Version["2.1"]: "v2.1", Version["3.0.0"]: "v3.0.0"}[version]
+
+    # Location for the cached zipball; fixed per version, so that the cache can be
+    # checked without any network access
+    zipball = platformdirs.user_cache_path("sdmx").joinpath(
+        f"sdmx-ml-{version_path}.zip"
+    )
+
+    if not zipball.exists() or force:
+        _download_zipball(zipball, version_path)
+
+    try:
+        result = _extract_zipball(zipball, force)
+    except zipfile.BadZipFile:
+        # Repair a corrupt cached zipball, e.g. truncated by a failed download
+        log.warning(f"Corrupt cached zipball {zipball} → download again")
+        zipball.unlink(missing_ok=True)
+        _download_zipball(zipball, version_path)
+        result = _extract_zipball(zipball, force)
+
+    # Provide copies of the bundled XSDs, which are missing from the SDMX bundle
+    _copy_bundled_schemas(result.joinpath("schemas"))
 
     return result
 
