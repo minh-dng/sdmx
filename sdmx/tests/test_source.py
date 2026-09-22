@@ -2,7 +2,14 @@ import pytest
 
 from sdmx import Client, Resource
 from sdmx.model import v21 as model
-from sdmx.source import Source, add_source, get_source, list_sources, sources
+from sdmx.source import (
+    DataContentType,
+    Source,
+    add_source,
+    get_source,
+    list_sources,
+    sources,
+)
 
 
 def test_get_source(caplog):
@@ -52,6 +59,24 @@ def test_abs_support():
             Resource.contentconstraint,
         )
     )
+
+
+@pytest.mark.parametrize(
+    "data_format, accept",
+    [
+        (DataContentType.JSON, "application/json"),
+        (DataContentType.XML, "application/xml"),
+    ],
+)
+def test_abs_data_format(data_format, accept):
+    request = Client("ABS").data(
+        "ABS,ANA_AGG,1.0.0",
+        key="....Q",
+        format=data_format,
+        dry_run=True,
+    )
+
+    assert request.headers["Accept"] == accept
 
 
 @pytest.mark.parametrize(
