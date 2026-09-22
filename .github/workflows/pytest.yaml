@@ -54,22 +54,29 @@ jobs:
       run: echo "dir=$(uv run --no-sync python -c 'import platformdirs; print(platformdirs.user_cache_path("sdmx"))')" >> "$GITHUB_OUTPUT"
       shell: bash
 
+    # Rotate the key weekly, so that cached test specimens are refreshed regularly
+    - name: Get the ISO week for the cache key
+      id: week
+      run: echo "week=$(date +%G-W%V)" >> "$GITHUB_OUTPUT"
+      shell: bash
+
     # Warm cache for the SDMX-ML schema zipballs, so that the default test suite needs
     # no large downloads
     - name: Cache sdmx test data and schemas
       uses: actions/cache@v5
       with:
         path: ${{ steps.sdmx-cache.outputs.dir }}
-        key: ${{ runner.os }}-sdmx-cache-v1
+        key: ${{ runner.os }}-sdmx-cache-${{ steps.week.outputs.week }}
 
     - name: Run pytest
       run: |
-        uv run --no-sync \
-          pytest \
-          --color=yes --durations=20 -ra --verbose \
-          --sdmx-fetch-data \
-          --cov-report=xml \
-          --numprocesses=auto
+        # Fetch test data only when not restored from cache, so that most runs need
+        # no network access; the cache is refreshed by the first run of each week
+        args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
+        if [ ! -e "${{ steps.sdmx-cache.outputs.dir }}/test-data/.git" ]; then
+          args+=(--sdmx-fetch-data)
+        fi
+        uv run --no-sync pytest "${args[@]}"
       shell: bash
 
     - name: Upload test coverage to Codecov.io
