@@ -49,6 +49,19 @@ jobs:
     - name: Install the package and dependencies
       run: uv pip install .[tests]
 
+    - name: Get the sdmx cache directory
+      id: sdmx-cache
+      run: echo "dir=$(uv run --no-sync python -c 'import platformdirs; print(platformdirs.user_cache_path("sdmx"))')" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    # Warm cache for the SDMX-ML schema zipballs, so that the default test suite needs
+    # no large downloads
+    - name: Cache sdmx test data and schemas
+      uses: actions/cache@v5
+      with:
+        path: ${{ steps.sdmx-cache.outputs.dir }}
+        key: ${{ runner.os }}-sdmx-cache-v1
+
     - name: Run pytest
       run: |
         uv run --no-sync \
