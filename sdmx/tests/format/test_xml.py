@@ -170,6 +170,27 @@ def test_extracted_zipball_repairs_corrupt_cache(no_sleep, cache_dir):
     assert first.joinpath("schemas", "SDMXMessage.xsd").exists()
 
 
+def test_extracted_zipball_force(no_sleep, cache_dir):
+    """force=True re-downloads and replaces the extracted directory in place."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        first = _extracted_zipball(Version["2.1"])
+        # Modify the extracted content, to detect whether it is replaced
+        first.joinpath("schemas", "SDMXMessage.xsd").write_text("corrupted")
+
+        second = _extracted_zipball(Version["2.1"], force=True)
+        assert len(mock.calls) == 4  # Release lookup and zipball, twice
+
+    assert first == second
+    assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
 @pytest.mark.flaky(reruns=5)
 @pytest.mark.network
 @pytest.mark.parametrize(
