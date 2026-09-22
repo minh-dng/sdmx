@@ -79,6 +79,21 @@ def test_abs_data_format(data_format, accept):
     assert request.headers["Accept"] == accept
 
 
+def test_abs_data_format_with_dsd():
+    """A supplied DSD does not override a JSON data format with the XML default."""
+    dsd = model.DataStructureDefinition(
+        id="DSD_TEST", version="1.0", maintainer=model.Agency(id="TEST")
+    )
+    request = Client("ABS").data(
+        "ABS,ANA_AGG,1.0.0",
+        dsd=dsd,
+        format=DataContentType.JSON,
+        dry_run=True,
+    )
+
+    assert request.headers["Accept"] == "application/json"
+
+
 @pytest.mark.parametrize(
     "resource_type, resource_id",
     [
