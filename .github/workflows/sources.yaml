@@ -20,6 +20,8 @@ env:
 jobs:
   source:
     runs-on: ubuntu-latest
+    # Guard against a hung request burning compute until the default (6-hour) timeout
+    timeout-minutes: 60
 
     strategy:
       matrix:
