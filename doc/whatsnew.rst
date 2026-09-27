@@ -3,8 +3,10 @@
 What's new?
 ***********
 
-.. Next release
-.. ============
+Next release
+============
+
+- Drop Python 3.10 support; :mod:`sdmx` now requires Python 3.11 or later.
 
 v2.28.0 (2026-10-18)
 ====================
