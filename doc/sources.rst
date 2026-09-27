@@ -95,14 +95,29 @@ Then identify the key format and construct a key for the desired data request.
 
 .. _ABS:
 
-``ABS``: Australian Bureau of Statistics (SDMX-ML)
---------------------------------------------------
+``ABS``: Australian Bureau of Statistics
+-----------------------------------------
 
-SDMX-ML —
+SDMX-ML and SDMX-JSON —
 `Website <https://www.abs.gov.au/statistics/application-programming-interfaces-apis/data-api-user-guide>`__
 
 - Structural metadata is requested with the ABS-documented
   ``Accept: application/xml`` header.
+- Pass a :class:`~sdmx.source.DataContentType` member as ``format`` to select the data
+  format. For example:
+
+  .. code-block:: python
+
+     import sdmx
+     from sdmx.source import DataContentType
+
+     client = sdmx.Client("ABS")
+     message = client.data(
+         "ABS,ANA_AGG,1.0.0",
+         key="....Q",
+         format=DataContentType.JSON,
+     )
+
 - A dataflow ID is not necessarily the ID of its data structure definition (DSD).
   Follow :attr:`.BaseDataflow.structure` and pass the retrieved DSD to
   :meth:`.Client.data` for model-aware key validation and parsing.
@@ -112,16 +127,16 @@ SDMX-ML —
 
 .. _ABS_JSON:
 
-``ABS_JSON``: Australian Bureau of Statistics (SDMX-JSON)
----------------------------------------------------------
+``ABS_JSON``: Australian Bureau of Statistics (SDMX-JSON; alias)
+----------------------------------------------------------------
 
-SDMX-JSON —
-`Website <https://www.abs.gov.au/statistics/application-programming-interfaces-apis/data-api-user-guide>`__
+``ABS_JSON`` remains available as a compatibility alias for JSON data requests. New
+code should use ``ABS`` with ``format=DataContentType.JSON``.
 
 .. warning::
 
    The current ABS service returns SDMX-JSON 2.0, for which support in
-   :mod:`sdmx` is incomplete. Use the :ref:`ABS` SDMX-ML source for model-aware
+   :mod:`sdmx` is incomplete. Use ``format=DataContentType.XML`` for model-aware
    queries.
 
 .. autoclass:: sdmx.source.abs_json.Source()
