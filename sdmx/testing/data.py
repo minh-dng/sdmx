@@ -160,37 +160,40 @@ class SpecimenCollection:
         blf = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
         blf._obtain_lock()
 
-        # Initialize a git Repo object
-        repo = git.Repo.init(self.base_path)
-
         try:
-            # Reference to existing 'origin' remote
-            origin = repo.remotes["origin"]
-            # Ensure the REMOTE_URL is among the URLs for this remote
-            if REMOTE_URL not in origin.urls:  # pragma: no cover
-                origin.set_url(REMOTE_URL)
-        except IndexError:
-            # Create a new remote
-            origin = repo.create_remote("origin", REMOTE_URL)
+            # Close GitPython's cached processes after fetching; on Windows, open Git
+            # handles otherwise prevent removing an incomplete CI checkout.
+            with git.Repo.init(self.base_path) as repo:
+                try:
+                    # Reference to existing 'origin' remote
+                    origin = repo.remotes["origin"]
+                    # Ensure the REMOTE_URL is among the URLs for this remote
+                    if REMOTE_URL not in origin.urls:  # pragma: no cover
+                        origin.set_url(REMOTE_URL)
+                except IndexError:
+                    # Create a new remote
+                    origin = repo.create_remote("origin", REMOTE_URL)
 
-        log.info(f"Fetch test data from {origin} → {repo.working_dir}")
+                log.info(f"Fetch test data from {origin} → {repo.working_dir}")
 
-        origin.fetch("refs/heads/main", depth=1)  # Fetch only 1 commit from the remote
-        origin_main = origin.refs["main"]  # Reference to 'origin/main'
-        try:
-            head = repo.heads["main"]  # Reference to existing local 'main'
-        except IndexError:
-            head = repo.create_head("main", origin_main)  # Create a local 'main'
+                # Fetch only 1 commit from the remote
+                origin.fetch("refs/heads/main", depth=1)
+                origin_main = origin.refs["main"]  # Reference to 'origin/main'
+                try:
+                    head = repo.heads["main"]  # Reference to existing local 'main'
+                except IndexError:
+                    # Create a local 'main'
+                    head = repo.create_head("main", origin_main)
 
-        if (
-            head.commit != origin_main.commit  # Commit differs
-            or repo.is_dirty()  # Working dir is dirty
-            or len(repo.index.diff(head.commit))
-        ):
-            # Check out files into the working directory
-            head.set_tracking_branch(origin_main).checkout()
-
-        del blf  # Release lock
+                if (
+                    head.commit != origin_main.commit  # Commit differs
+                    or repo.is_dirty()  # Working dir is dirty
+                    or len(repo.index.diff(head.commit))
+                ):
+                    # Check out files into the working directory
+                    head.set_tracking_branch(origin_main).checkout()
+        finally:
+            del blf  # Release lock
 
     def parametrize(self, metafunc) -> None:
         """Handle the ``parametrize_specimens`` mark for a specific test."""
