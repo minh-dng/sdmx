@@ -1,5 +1,7 @@
 import io
 import re
+import subprocess
+import sys
 import time
 import zipfile
 from pathlib import Path
@@ -134,6 +136,25 @@ def test_fetch_with_retries_non_transient():
             _fetch_with_retries(f"{GH_API}/foo")
 
         assert len(mock.calls) == 1
+
+
+def test_copy_bundled_schemas_fresh_interpreter(tmp_path):
+    """The bundled schemas can be copied in a process where importlib.resources is not
+    pre-imported by something else, e.g. pytest."""
+    code = """\
+import sys
+from pathlib import Path
+
+from sdmx.format.xml.common import _copy_bundled_schemas
+
+_copy_bundled_schemas(Path(sys.argv[1]))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "xhtml1-strict.xsd").exists()
+    assert (tmp_path / "xml.xsd").exists()
 
 
 def test_extracted_zipball_caches(no_sleep, cache_dir):
