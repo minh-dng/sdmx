@@ -74,7 +74,10 @@ jobs:
         # completed checkout, so that most runs need no network access; the cache is
         # refreshed by the first run of each week
         args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
-        if ! git -C "${{ steps.sdmx-cache.outputs.dir }}/test-data" rev-parse HEAD &>/dev/null; then
+        data_dir="${{ steps.sdmx-cache.outputs.dir }}/test-data"
+        if ! git -C "$data_dir" rev-parse HEAD &>/dev/null ||
+           ! git -C "$data_dir" diff --quiet HEAD --; then
+          # No checkout, or an interrupted one with a modified/missing working tree
           args+=(--sdmx-fetch-data)
         fi
         uv run --no-sync pytest "${args[@]}"
