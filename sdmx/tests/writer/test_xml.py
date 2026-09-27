@@ -127,7 +127,7 @@ def submit_structure_response(header, dsd) -> message.SubmitStructureResponse:
 
 
 class TestNameableArtefact:
-    def test_xsd(self, structure_message):
+    def test_xsd(self, structure_message, installed_schemas):
         """Annotations for a NameableArtefact are output in the correct order.
 
         In https://github.com/khaeru/sdmx/issues/210 it was reported that
@@ -159,7 +159,7 @@ class TestNameableArtefact:
         buf = io.BytesIO(sdmx.to_xml(structure_message))
 
         # Validate using XSD. Fails with v2.19.1.
-        assert validate_xml(buf), buf.getvalue().decode()
+        assert validate_xml(buf, installed_schemas), buf.getvalue().decode()
 
 
 def test_contact() -> None:
@@ -324,13 +324,15 @@ def test_DataMessage(datamessage):
     sdmx.to_xml(datamessage)
 
 
-def test_MetadataMessage(metadata_message, *, debug: bool = True) -> None:
+def test_MetadataMessage(
+    metadata_message, installed_schemas, *, debug: bool = True
+) -> None:
     """:class:`.MetadataMessage` can be written."""
     # Write to SDMX-ML
     buf = io.BytesIO(sdmx.to_xml(metadata_message, pretty_print=debug))
 
     # Validate using XSD
-    assert validate_xml(buf), buf.getvalue().decode()
+    assert validate_xml(buf, installed_schemas), buf.getvalue().decode()
 
 
 def test_ErrorMessage(errormessage):
@@ -338,13 +340,13 @@ def test_ErrorMessage(errormessage):
     sdmx.to_xml(errormessage)
 
 
-def test_SubmitStructureResponse(submit_structure_response) -> None:
+def test_SubmitStructureResponse(submit_structure_response, installed_schemas) -> None:
     """:class:`SubmitStructureResponse` can be written to valid SDMX-ML."""
     # Object can be written to SDMX-ML without error
     data = io.BytesIO(sdmx.to_xml(submit_structure_response, pretty_print=True))
 
     # SDMX-ML validates using the DSD
-    assert validate_xml(data), "Invalid SDMX-ML"
+    assert validate_xml(data, installed_schemas), "Invalid SDMX-ML"
 
 
 @pytest.mark.usefixtures("tmp_path", "installed_schemas", "specimen")
