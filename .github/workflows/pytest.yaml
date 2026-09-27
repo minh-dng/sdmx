@@ -76,7 +76,20 @@ jobs:
            ! git -C "$data_dir" diff --quiet HEAD --; then
           # Only this disposable CI checkout: fetch does not restore deleted files
           # or overwrite modified files in an existing checkout.
-          uv run --no-sync python -c 'import shutil, sys; from pathlib import Path; p = Path(sys.argv[1]); p.exists() and shutil.rmtree(p)' "$data_dir"
+          uv run --no-sync python -c '
+        import os, shutil, stat, sys
+        from pathlib import Path
+
+        def remove_readonly(func, path, error):
+            if not isinstance(error[1], PermissionError):
+                raise error[1]
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+
+        path = Path(sys.argv[1])
+        if path.exists():
+            shutil.rmtree(path, onerror=remove_readonly)
+          ' "$data_dir"
           args+=(--sdmx-fetch-data)
         fi
         uv run --no-sync pytest "${args[@]}"
