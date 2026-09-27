@@ -373,7 +373,12 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
             old = zipball.parent.joinpath(f"{zipball.name}.old{uuid.uuid4().hex}")
             if published:
                 rmtree(old, ignore_errors=True)
-                result.rename(old)
+                try:
+                    result.rename(old)
+                except FileNotFoundError:
+                    # Another caller moved it after the existence check; publish our
+                    # complete extraction (or keep a concurrent publication below).
+                    pass
 
             try:
                 tmp.joinpath(top).rename(result)
