@@ -318,6 +318,58 @@ def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch, force):
     ]
 
 
+def test_extract_zipball_force_competing_move(cache_dir, monkeypatch):
+    """Publish our extraction when another caller moves the old result first."""
+    zipball = cache_dir / "sdmx-ml-v2.1.zip"
+    zipball.write_bytes(_zipball_bytes())
+    result = _extract_zipball(zipball)
+    result.joinpath("schemas", "SDMXMessage.xsd").write_text("stale content")
+    competitor = cache_dir / "competitor.old"
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if self == result:
+            original_rename(self, competitor)
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    assert _extract_zipball(zipball, force=True) == result
+    assert result.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+    assert competitor.joinpath("schemas", "SDMXMessage.xsd").read_text() == (
+        "stale content"
+    )
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "competitor.old",
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+def test_extract_zipball_force_restores_on_failure(cache_dir, monkeypatch):
+    """A failed forced publication puts its own moved copy back."""
+    zipball = cache_dir / "sdmx-ml-v2.1.zip"
+    zipball.write_bytes(_zipball_bytes())
+    result = _extract_zipball(zipball)
+    result.joinpath("schemas", "SDMXMessage.xsd").write_text("stale content")
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if self.name == "sdmx-ml-v2.1" and self.parent.name.startswith(
+            f"{zipball.name}.tmp"
+        ):
+            raise OSError("publication failed")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    with pytest.raises(OSError, match="publication failed"):
+        _extract_zipball(zipball, force=True)
+    assert result.joinpath("schemas", "SDMXMessage.xsd").read_text() == "stale content"
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
 def test_extract_zipball_force_race(no_sleep, cache_dir, monkeypatch):
     """A forced replacement racing with another publisher keeps the other's result."""
     with responses.RequestsMock() as mock:
