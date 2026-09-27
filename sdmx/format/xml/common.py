@@ -329,10 +329,10 @@ def _download_zipball(target: Path, version_path: str) -> None:
         # the cached zipball
         with zipfile.ZipFile(tmp):
             pass
-    except Exception:
+
+        tmp.replace(target)
+    finally:
         tmp.unlink(missing_ok=True)
-        raise
-    tmp.replace(target)
 
 
 def _extract_zipball(zipball: Path, force: bool = False) -> Path:
@@ -381,6 +381,11 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
                 if not published and result.exists() and not force:
                     # Another caller won the race to publish between the check above
                     # and the rename
+                    return result
+                if published and result.exists():
+                    # Another caller published during the replacement; its content is
+                    # equivalent, so keep it and discard the copy moved aside
+                    rmtree(old, ignore_errors=True)
                     return result
                 if published and old.exists():
                     old.rename(result)  # Restore the previous copy

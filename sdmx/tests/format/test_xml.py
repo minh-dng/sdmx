@@ -283,6 +283,55 @@ def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch):
     ]
 
 
+def test_extract_zipball_force_race(no_sleep, cache_dir, monkeypatch):
+    """A forced replacement racing with another publisher keeps the other's result."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    # Publish an initial extraction, then corrupt its content
+    first = _extract_zipball(zipball)
+    first.joinpath("schemas", "SDMXMessage.xsd").write_text("stale content")
+
+    result = zipball.parent.joinpath("sdmx-ml-v2.1")
+    state = {"simulated": False}
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if (
+            not state["simulated"]
+            and self.name.startswith(f"{zipball.name}.tmp")
+            and Path(target) == result
+        ):
+            state["simulated"] = True
+            # Simulate a concurrent caller publishing while this forced replacement
+            # moves its own copy into place…
+            with zipfile.ZipFile(zipball) as zf:
+                top = zf.namelist()[0].split("/")[0]
+                other = zipball.parent.joinpath("other.tmp")
+                zf.extractall(other)
+                original_rename(other.joinpath(top), result)
+            shutil.rmtree(other, ignore_errors=True)
+            # …so that this caller's replacement fails
+            raise OSError(66, "Directory not empty")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+
+    second = _extract_zipball(zipball, force=True)
+
+    assert second == result
+    # The concurrent caller's fresh content is kept
+    assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
 @pytest.mark.flaky(reruns=5)
 @pytest.mark.network
 @pytest.mark.parametrize(
