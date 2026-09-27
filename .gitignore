@@ -26,3 +26,7 @@ source-tests/
 # Editors
 .vscode/
 .idea/
+
+# Locally generated artifacts
+graphify-out/
+uv.lock

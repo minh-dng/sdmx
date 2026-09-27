@@ -7,6 +7,17 @@ Next release
 ============
 
 - Drop Python 3.10 support; :mod:`sdmx` now requires Python 3.11 or later.
+- Let :ref:`ABS` callers select XML or JSON data with
+  :class:`~sdmx.source.DataContentType`; retain :ref:`ABS_JSON` as a compatibility
+  alias.
+- Apply :attr:`.Session.timeout` to every request sent by :class:`.Client`, including
+  with a plain :class:`requests.Session`, for which the default is 30 seconds. A
+  ``timeout=`` argument to :meth:`.Client.get` applies to that request only.
+- Bundle the XSD schemas required for :func:`.validate_xml` alongside the package, so
+  that installing SDMX-ML schemas requires no requests to w3.org.
+- Make :func:`.install_schemas` resilient to transient network failures: retry HTTP
+  error responses, reuse cached schema archives without downloading, and replace
+  corrupt or partially written cache entries.
 
 v2.27.0 (2026-08-06)
 ====================
