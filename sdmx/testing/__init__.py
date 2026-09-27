@@ -265,16 +265,15 @@ def installed_schemas(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[Path]:
     """Fixture that ensures schemas are installed locally in a temporary directory."""
+    import platformdirs
+
     from sdmx.format.xml.common import install_schemas
 
-    # Determine a consistent path on each worker for schema installation
-    if worker_id == "master":  # xdist controller *or* not using test distribution
-        dir = tmp_path_factory.mktemp("schemas")  # pragma: no cover
-    else:  # xdist worker: find relative to the parent of the basetemp for this worker
-        dir = tmp_path_factory.getbasetemp().parent.joinpath("schemas")
+    dir = tmp_path_factory.mktemp("schemas")
 
-    # Don't try to unpack from multiple workers at once
-    with mock_gh_api, FileLock(dir.with_suffix(".lock")):
+    # Keep installation serialized across workers sharing the user cache.
+    lock = platformdirs.user_cache_path("sdmx", ensure_exists=True) / "schemas.lock"
+    with mock_gh_api, FileLock(lock):
         install_schemas(dir.joinpath("2.1"), Version["2.1"])
         install_schemas(dir.joinpath("3.0.0"), Version["3.0.0"])
 
