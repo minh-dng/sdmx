@@ -246,7 +246,8 @@ def test_extract_zipball_concurrent(no_sleep, cache_dir, monkeypatch):
     ]
 
 
-def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch):
+@pytest.mark.parametrize("force", [False, True])
+def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch, force):
     """A caller that loses the race to publish keeps the winner's extraction."""
     with responses.RequestsMock() as mock:
         _mock_gh_api(mock)
@@ -273,7 +274,7 @@ def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch):
 
     monkeypatch.setattr(Path, "rename", rename)
 
-    assert _extract_zipball(zipball) == result
+    assert _extract_zipball(zipball, force=force) == result
     assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
 
     # No temporary files or directories are left behind

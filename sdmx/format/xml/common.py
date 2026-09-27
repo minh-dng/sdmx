@@ -368,23 +368,21 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
                 # Another caller published the extraction while we worked; keep theirs
                 return result
 
+            # Force: move the existing copy aside, and only discard it once the
+            # replacement is in place; restore it if the replacement fails
+            old = zipball.parent.joinpath(f"{zipball.name}.old{uuid.uuid4().hex}")
             if published:
-                # Force: move the existing copy aside, and only discard it once the
-                # replacement is in place; restore it if the replacement fails
-                old = zipball.parent.joinpath(f"{zipball.name}.old{uuid.uuid4().hex}")
                 rmtree(old, ignore_errors=True)
                 result.rename(old)
 
             try:
                 tmp.joinpath(top).rename(result)
             except OSError:
-                if not published and result.exists() and not force:
-                    # Another caller won the race to publish between the check above
-                    # and the rename
-                    return result
-                if published and result.exists():
-                    # Another caller published during the replacement; its content is
-                    # equivalent, so keep it and discard the copy moved aside
+                if result.exists():
+                    # Another caller published the extraction, either between the
+                    # check above and the rename, or during a forced replacement; its
+                    # content is equivalent, so keep it and discard any copy moved
+                    # aside
                     rmtree(old, ignore_errors=True)
                     return result
                 if published and old.exists():
