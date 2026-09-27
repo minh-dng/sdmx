@@ -13,6 +13,7 @@ import responses
 
 import sdmx
 from sdmx.format import Version, xml
+from sdmx.format.xml import common
 from sdmx.format.xml.common import (
     _download_zipball,
     _extract_zipball,
@@ -161,6 +162,39 @@ _copy_bundled_schemas(Path(sys.argv[1]))
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "xhtml1-strict.xsd").exists()
     assert (tmp_path / "xml.xsd").exists()
+
+
+def test_install_schemas_during_bundled_publication(tmp_path, monkeypatch):
+    """An install during publication must not copy a staging file."""
+    source = tmp_path / "extracted"
+    schemas = source / "schemas"
+    schemas.mkdir(parents=True)
+    (schemas / "SDMXMessage.xsd").write_text("complete")
+    destination = tmp_path / "installed"
+    monkeypatch.setattr(common, "_extracted_zipball", lambda version: source)
+    original_copyfile = common.copyfile
+    copies = 0
+
+    def copyfile_and_install(src, dst):
+        nonlocal copies
+        original_copyfile(src, dst)
+        copies += 1
+        if copies == 2:
+            assert sdmx.install_schemas(destination) == destination
+
+    monkeypatch.setattr(common, "copyfile", copyfile_and_install)
+    common._copy_bundled_schemas(schemas)
+
+    assert copies == 2
+    assert sorted(p.name for p in destination.iterdir()) == [
+        "SDMXMessage.xsd",
+        "xml.xsd",
+    ]
+    assert sorted(p.name for p in schemas.iterdir()) == [
+        "SDMXMessage.xsd",
+        "xhtml1-strict.xsd",
+        "xml.xsd",
+    ]
 
 
 def test_extracted_zipball_caches(no_sleep, cache_dir):
