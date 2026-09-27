@@ -28,7 +28,8 @@ jobs:
         python-version: ${{ env.python-version }}
 
     - name: Install the package and docs dependencies
-      run: uv pip install --editable '.[docs]'
+      # Executed examples need caching; autodoc imports sdmx.testing.
+      run: uv pip install --editable '.[docs,tests]'
 
     - name: Build HTML documentation
       run: make -C doc html
