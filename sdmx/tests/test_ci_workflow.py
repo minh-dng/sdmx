@@ -67,8 +67,13 @@ uv() {
 }
 """
     flag = tmp_path / "fetch-flag"
+    bash = "bash"
+    if sys.platform == "win32":
+        # Match Actions' `shell: bash` (Git Bash), not Windows' WSL launcher.
+        git_root = Path(git("--exec-path", cwd=tmp_path).stdout.strip()).parents[2]
+        bash = str(git_root / "bin" / "bash.exe")
     subprocess.run(
-        ["bash", "-e", "-c", runner + script],
+        [bash, "-e", "-c", runner + script],
         check=True,
         env={
             **os.environ,
