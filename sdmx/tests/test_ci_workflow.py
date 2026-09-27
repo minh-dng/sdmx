@@ -63,7 +63,11 @@ def test_ci_test_data_cache_recovery(tmp_path, monkeypatch, state):
     )
     runner = """\
 uv() {
-  "$PYTHON" -c 'import os, sys; from pathlib import Path; from sdmx.testing import data; data.REMOTE_URL = os.environ["REMOTE"]; data.SpecimenCollection(Path(os.environ["CHECKOUT"]), "--sdmx-fetch-data" in sys.argv); Path(os.environ["FETCH_FLAG"]).write_text(str("--sdmx-fetch-data" in sys.argv))' "$@"
+  if [[ "$3" == python ]]; then
+    "$PYTHON" "${@:4}"
+  else
+    "$PYTHON" -c 'import os, sys; from pathlib import Path; from sdmx.testing import data; data.REMOTE_URL = os.environ["REMOTE"]; data.SpecimenCollection(Path(os.environ["CHECKOUT"]), "--sdmx-fetch-data" in sys.argv); Path(os.environ["FETCH_FLAG"]).write_text(str("--sdmx-fetch-data" in sys.argv))' "$@"
+  fi
 }
 """
     flag = tmp_path / "fetch-flag"

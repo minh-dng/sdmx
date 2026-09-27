@@ -72,15 +72,11 @@ jobs:
         # refreshed by the first run of each week
         args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
         data_dir="${{ steps.sdmx-cache.outputs.dir }}/test-data"
-        # Git Bash needs a POSIX path for rm on Windows; Git also accepts it.
-        if command -v cygpath &>/dev/null; then
-          data_dir="$(cygpath -u "$data_dir")"
-        fi
         if ! git -C "$data_dir" rev-parse HEAD &>/dev/null ||
            ! git -C "$data_dir" diff --quiet HEAD --; then
           # Only this disposable CI checkout: fetch does not restore deleted files
           # or overwrite modified files in an existing checkout.
-          rm -rf -- "$data_dir"
+          uv run --no-sync python -c 'import shutil, sys; from pathlib import Path; p = Path(sys.argv[1]); p.exists() and shutil.rmtree(p)' "$data_dir"
           args+=(--sdmx-fetch-data)
         fi
         uv run --no-sync pytest "${args[@]}"
