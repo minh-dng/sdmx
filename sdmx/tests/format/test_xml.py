@@ -388,7 +388,7 @@ def test_extract_zipball_force_race(no_sleep, cache_dir, monkeypatch):
     def rename(self, target):
         if (
             not state["simulated"]
-            and self.name.startswith(f"{zipball.name}.tmp")
+            and self.parent.name.startswith(f"{zipball.name}.tmp")
             and Path(target) == result
         ):
             state["simulated"] = True
@@ -408,6 +408,7 @@ def test_extract_zipball_force_race(no_sleep, cache_dir, monkeypatch):
 
     second = _extract_zipball(zipball, force=True)
 
+    assert state["simulated"]
     assert second == result
     # The concurrent caller's fresh content is kept
     assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
