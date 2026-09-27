@@ -282,10 +282,10 @@ def _copy_bundled_schemas(target_dir: Path) -> None:
         )
         # Copy unconditionally, so that a corrupt or stale file in an existing cache is
         # repaired; write to a temporary file and move into place, so that a concurrent
-        # reader never sees a partial file. Use a unique name, so that concurrent calls
-        # do not interfere.
+        # reader never sees a partial file. Stage in the parent, outside the schemas
+        # subtree copied by install_schemas, but on the same filesystem for replace.
         with importlib.resources.as_file(source) as path:
-            tmp = target_dir.joinpath(f"{name}.tmp{uuid.uuid4().hex}")
+            tmp = target_dir.parent.joinpath(f"{name}.tmp{uuid.uuid4().hex}")
             try:
                 copyfile(path, tmp)
                 tmp.replace(target_dir.joinpath(name))
