@@ -74,7 +74,9 @@ jobs:
         data_dir="${{ steps.sdmx-cache.outputs.dir }}/test-data"
         if ! git -C "$data_dir" rev-parse HEAD &>/dev/null ||
            ! git -C "$data_dir" diff --quiet HEAD --; then
-          # No checkout, or an interrupted one with a modified/missing working tree
+          # Only this disposable CI checkout: fetch does not restore deleted files
+          # or overwrite modified files in an existing checkout.
+          rm -rf -- "$data_dir"
           args+=(--sdmx-fetch-data)
         fi
         uv run --no-sync pytest "${args[@]}"
