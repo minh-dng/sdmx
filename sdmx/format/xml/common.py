@@ -1,5 +1,6 @@
 import importlib.resources
 import logging
+import os
 import re
 import zipfile
 from collections.abc import Iterable, Mapping
@@ -213,8 +214,10 @@ def construct_schema(
 _TRANSIENT_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 #: XSD documents bundled with the package (see the LICENSE alongside them) and copied
-#: alongside the downloaded SDMX-ML schemas.
-_BUNDLED_SCHEMAS = ("xhtml1-strict.xsd", "xml.xsd")
+#: alongside the downloaded SDMX-ML schemas, in the order they are published.
+#: xml.xsd comes first, so that a concurrent schema compilation never sees the XHTML
+#: schema without the local copy of xml.xsd that it imports.
+_BUNDLED_SCHEMAS = ("xml.xsd", "xhtml1-strict.xsd")
 
 
 def _fetch_with_retries(
@@ -277,9 +280,13 @@ def _copy_bundled_schemas(target_dir: Path) -> None:
         source = importlib.resources.files("sdmx.format.xml").joinpath(
             f"schemas/{name}"
         )
-        # Copy unconditionally, so that a corrupt file in an existing cache is repaired
+        # Copy unconditionally, so that a corrupt or stale file in an existing cache is
+        # repaired; write to a temporary file and move into place, so that a concurrent
+        # reader never sees a partial file
         with importlib.resources.as_file(source) as path:
-            copyfile(path, target_dir.joinpath(name))
+            tmp = target_dir.joinpath(f"{name}.tmp{os.getpid()}")
+            copyfile(path, tmp)
+            tmp.replace(target_dir.joinpath(name))
 
 
 def _download_zipball(target: Path, version_path: str) -> None:
@@ -288,8 +295,6 @@ def _download_zipball(target: Path, version_path: str) -> None:
     The download is written to a temporary path, validated, and then moved to `target`,
     so that a concurrent reader never sees a partial file.
     """
-    import os
-
     # Check the latest release to get the URL to the schema zip
     url_base = "https://api.github.com/repos/sdmx-twg/sdmx-ml"
     headers = {
@@ -333,8 +338,6 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
     Path
         Path to the root folder of the unpacked archive.
     """
-    import os
-
     with zipfile.ZipFile(zipball) as zf:
         # The top-level directory within the archive; the first name list entry is
         # either that directory or a file within it
