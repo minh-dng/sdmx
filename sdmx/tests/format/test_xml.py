@@ -1,12 +1,24 @@
 import io
 import re
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
 from pathlib import Path
 
 import pytest
+import requests
+import responses
 
 import sdmx
 from sdmx.format import Version, xml
-from sdmx.format.xml.common import _extracted_zipball
+from sdmx.format.xml.common import (
+    _download_zipball,
+    _extract_zipball,
+    _extracted_zipball,
+    _fetch_with_retries,
+)
 from sdmx.message import StructureMessage
 from sdmx.model import v21
 
@@ -59,6 +71,266 @@ def test_install_schemas_invalid_version(version):
     """Ensure invalid versions throw ``NotImplementedError``."""
     with pytest.raises(NotImplementedError):
         sdmx.install_schemas(version=version)
+
+
+GH_API = "https://api.github.com/repos/sdmx-twg/sdmx-ml"
+
+
+@pytest.fixture
+def cache_dir(monkeypatch, tmp_path):
+    """Redirect the sdmx user cache to a temporary directory."""
+    monkeypatch.setattr("platformdirs.user_cache_path", lambda app: tmp_path)
+    return tmp_path
+
+
+@pytest.fixture
+def no_sleep(monkeypatch):
+    """Skip the backoff delays in :func:`._fetch_with_retries`."""
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+
+
+def _zipball_bytes() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("sdmx-ml-v2.1/schemas/SDMXMessage.xsd", "<xs:schema/>")
+    return buf.getvalue()
+
+
+def _mock_gh_api(mock: responses.RequestsMock) -> None:
+    """Mock the GitHub API responses for downloading the 2.1 schema zipball."""
+    mock.get(
+        f"{GH_API}/releases/tags/v2.1",
+        json={"zipball_url": f"{GH_API}/zipball/v2.1"},
+    )
+    mock.get(f"{GH_API}/zipball/v2.1", body=_zipball_bytes())
+
+
+@pytest.mark.parametrize(
+    "response_kwargs",
+    [
+        dict(body=requests.ConnectionError()),  # Transport failure
+        dict(status=503),  # Transient HTTP status
+    ],
+)
+def test_fetch_with_retries(no_sleep, response_kwargs):
+    """A transient failure is retried; the response of the next attempt is returned."""
+    with responses.RequestsMock() as mock:
+        mock.get(f"{GH_API}/foo", **response_kwargs)
+        mock.get(f"{GH_API}/foo", json={"ok": True})
+        result = _fetch_with_retries(f"{GH_API}/foo")
+
+        assert result.json() == {"ok": True}
+        assert len(mock.calls) == 2
+
+
+def test_fetch_with_retries_exhausted(no_sleep):
+    """After the final attempt, a transient HTTP status raises HTTPError."""
+    with responses.RequestsMock() as mock:
+        for _ in range(3):
+            mock.get(f"{GH_API}/foo", status=500)
+        with pytest.raises(requests.HTTPError):
+            _fetch_with_retries(f"{GH_API}/foo")
+
+        assert len(mock.calls) == 3
+
+
+def test_fetch_with_retries_non_transient():
+    """A non-transient HTTP status is not retried."""
+    with responses.RequestsMock() as mock:
+        mock.get(f"{GH_API}/foo", status=404)
+        with pytest.raises(requests.HTTPError):
+            _fetch_with_retries(f"{GH_API}/foo")
+
+        assert len(mock.calls) == 1
+
+
+def test_copy_bundled_schemas_fresh_interpreter(tmp_path):
+    """The bundled schemas can be copied in a process where importlib.resources is not
+    pre-imported by something else, e.g. pytest."""
+    code = """\
+import sys
+from pathlib import Path
+
+from sdmx.format.xml.common import _copy_bundled_schemas
+
+_copy_bundled_schemas(Path(sys.argv[1]))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "xhtml1-strict.xsd").exists()
+    assert (tmp_path / "xml.xsd").exists()
+
+
+def test_extracted_zipball_caches(no_sleep, cache_dir):
+    """The zipball is downloaded once, then reused without any network access."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        result = _extracted_zipball(Version["2.1"])
+
+    # Contents are extracted and the bundled XSDs copied alongside
+    assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
+    assert result.joinpath("schemas", "xhtml1-strict.xsd").exists()
+    assert result.joinpath("schemas", "xml.xsd").exists()
+
+    # A second call performs no HTTP requests at all
+    with responses.RequestsMock() as mock:
+        assert _extracted_zipball(Version["2.1"]) == result
+        assert len(mock.calls) == 0
+
+
+def test_extracted_zipball_repairs_corrupt_cache(no_sleep, cache_dir):
+    """A corrupt cached zipball is discarded and replaced by a fresh download."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        first = _extracted_zipball(Version["2.1"])
+        assert len(mock.calls) == 2
+
+        # Corrupt the cached zipball
+        cache_dir.joinpath("sdmx-ml-v2.1.zip").write_bytes(b"not a zip file")
+
+        second = _extracted_zipball(Version["2.1"])
+        assert len(mock.calls) == 4  # Release lookup and zipball, twice
+
+    assert first == second
+    assert first.joinpath("schemas", "SDMXMessage.xsd").exists()
+
+
+def test_extracted_zipball_force(no_sleep, cache_dir):
+    """force=True re-downloads and replaces the extracted directory in place."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        first = _extracted_zipball(Version["2.1"])
+        # Modify the extracted content, to detect whether it is replaced
+        first.joinpath("schemas", "SDMXMessage.xsd").write_text("corrupted")
+
+        second = _extracted_zipball(Version["2.1"], force=True)
+        assert len(mock.calls) == 4  # Release lookup and zipball, twice
+
+    assert first == second
+    assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+def test_extract_zipball_concurrent(no_sleep, cache_dir, monkeypatch):
+    """If another caller publishes the extraction while this one works, keep theirs."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    original_extractall = zipfile.ZipFile.extractall
+
+    def extractall_and_publish(self, *args, **kwargs):
+        original_extractall(self, *args, **kwargs)
+        # Simulate a concurrent caller publishing its extraction while this one extracts
+        top = self.namelist()[0].split("/")[0]
+        Path(*args).joinpath(top).rename(zipball.parent.joinpath(top))
+
+    monkeypatch.setattr(zipfile.ZipFile, "extractall", extractall_and_publish)
+
+    result = _extract_zipball(zipball)
+
+    assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch, force):
+    """A caller that loses the race to publish keeps the winner's extraction."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    result = zipball.parent.joinpath("sdmx-ml-v2.1")
+    state = {"published": False}
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if target == result and not state["published"]:
+            state["published"] = True
+            # Simulate a concurrent caller publishing its extraction first…
+            with zipfile.ZipFile(zipball) as zf:
+                top = zf.namelist()[0].split("/")[0]
+                other = zipball.parent.joinpath("other.tmp")
+                zf.extractall(other)
+                original_rename(other.joinpath(top), result)
+            shutil.rmtree(other, ignore_errors=True)
+            # …then this caller loses the race to move its own copy into place
+            raise OSError(17, "File exists")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+
+    assert _extract_zipball(zipball, force=force) == result
+    assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+def test_extract_zipball_force_race(no_sleep, cache_dir, monkeypatch):
+    """A forced replacement racing with another publisher keeps the other's result."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    # Publish an initial extraction, then corrupt its content
+    first = _extract_zipball(zipball)
+    first.joinpath("schemas", "SDMXMessage.xsd").write_text("stale content")
+
+    result = zipball.parent.joinpath("sdmx-ml-v2.1")
+    state = {"simulated": False}
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if (
+            not state["simulated"]
+            and self.name.startswith(f"{zipball.name}.tmp")
+            and Path(target) == result
+        ):
+            state["simulated"] = True
+            # Simulate a concurrent caller publishing while this forced replacement
+            # moves its own copy into place…
+            with zipfile.ZipFile(zipball) as zf:
+                top = zf.namelist()[0].split("/")[0]
+                other = zipball.parent.joinpath("other.tmp")
+                zf.extractall(other)
+                original_rename(other.joinpath(top), result)
+            shutil.rmtree(other, ignore_errors=True)
+            # …so that this caller's replacement fails
+            raise OSError(66, "Directory not empty")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+
+    second = _extract_zipball(zipball, force=True)
+
+    assert second == result
+    # The concurrent caller's fresh content is kept
+    assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
 
 
 @pytest.mark.flaky(reruns=5)
