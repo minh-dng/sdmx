@@ -1,7 +1,7 @@
 import importlib.resources
 import logging
-import os
 import re
+import uuid
 import zipfile
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
@@ -282,11 +282,16 @@ def _copy_bundled_schemas(target_dir: Path) -> None:
         )
         # Copy unconditionally, so that a corrupt or stale file in an existing cache is
         # repaired; write to a temporary file and move into place, so that a concurrent
-        # reader never sees a partial file
+        # reader never sees a partial file. Use a unique name, so that concurrent calls
+        # do not interfere.
         with importlib.resources.as_file(source) as path:
-            tmp = target_dir.joinpath(f"{name}.tmp{os.getpid()}")
-            copyfile(path, tmp)
-            tmp.replace(target_dir.joinpath(name))
+            tmp = target_dir.joinpath(f"{name}.tmp{uuid.uuid4().hex}")
+            try:
+                copyfile(path, tmp)
+                tmp.replace(target_dir.joinpath(name))
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
 
 
 def _download_zipball(target: Path, version_path: str) -> None:
@@ -315,16 +320,16 @@ def _download_zipball(target: Path, version_path: str) -> None:
     resp = _fetch_with_retries(zipball_url, headers)
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    # NB the version_path contains dots, so Path.with_suffix() would truncate the name
-    tmp = target.parent.joinpath(f"{target.name}.tmp{os.getpid()}")
-    tmp.write_bytes(resp.content)
-
-    # Validate before moving into place, so that a corrupt download never replaces the
-    # cached zipball
+    # Use a unique name, so that concurrent calls do not interfere
+    tmp = target.parent.joinpath(f"{target.name}.tmp{uuid.uuid4().hex}")
     try:
+        tmp.write_bytes(resp.content)
+
+        # Validate before moving into place, so that a corrupt download never replaces
+        # the cached zipball
         with zipfile.ZipFile(tmp):
             pass
-    except zipfile.BadZipFile:
+    except Exception:
         tmp.unlink(missing_ok=True)
         raise
     tmp.replace(target)
@@ -353,29 +358,37 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
 
         # Extract to a temporary directory, then move the archive's top-level directory
         # into place, so that a concurrent reader never sees a partially extracted
-        # archive
-        tmp = zipball.parent.joinpath(f"{zipball.name}.tmp{os.getpid()}")
+        # archive. Use a unique name, so that concurrent callers do not interfere.
+        tmp = zipball.parent.joinpath(f"{zipball.name}.tmp{uuid.uuid4().hex}")
         rmtree(tmp, ignore_errors=True)
-        zf.extractall(tmp)
-        if result.exists() and not force:
-            # Another caller published the extraction while we worked; keep theirs
-            rmtree(tmp, ignore_errors=True)
-            return result
-        elif result.exists():
-            # Force: move the existing copy aside, and only discard it once the
-            # replacement is in place; restore it if the replacement fails
-            old = zipball.parent.joinpath(f"{zipball.name}.old{os.getpid()}")
-            rmtree(old, ignore_errors=True)
-            result.rename(old)
+        try:
+            zf.extractall(tmp)
+            published = result.exists()
+            if published and not force:
+                # Another caller published the extraction while we worked; keep theirs
+                return result
+
+            if published:
+                # Force: move the existing copy aside, and only discard it once the
+                # replacement is in place; restore it if the replacement fails
+                old = zipball.parent.joinpath(f"{zipball.name}.old{uuid.uuid4().hex}")
+                rmtree(old, ignore_errors=True)
+                result.rename(old)
+
             try:
                 tmp.joinpath(top).rename(result)
             except OSError:
-                old.rename(result)
+                if not published and result.exists() and not force:
+                    # Another caller won the race to publish between the check above
+                    # and the rename
+                    return result
+                if published and old.exists():
+                    old.rename(result)  # Restore the previous copy
                 raise
-            rmtree(old, ignore_errors=True)
-        else:
-            tmp.joinpath(top).rename(result)
-        rmtree(tmp, ignore_errors=True)
+            if published:
+                rmtree(old, ignore_errors=True)
+        finally:
+            rmtree(tmp, ignore_errors=True)
 
     return result
 

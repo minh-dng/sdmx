@@ -1,5 +1,6 @@
 import io
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -236,6 +237,43 @@ def test_extract_zipball_concurrent(no_sleep, cache_dir, monkeypatch):
 
     result = _extract_zipball(zipball)
 
+    assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+def test_extract_zipball_rename_race(no_sleep, cache_dir, monkeypatch):
+    """A caller that loses the race to publish keeps the winner's extraction."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    result = zipball.parent.joinpath("sdmx-ml-v2.1")
+    state = {"published": False}
+    original_rename = Path.rename
+
+    def rename(self, target):
+        if target == result and not state["published"]:
+            state["published"] = True
+            # Simulate a concurrent caller publishing its extraction first…
+            with zipfile.ZipFile(zipball) as zf:
+                top = zf.namelist()[0].split("/")[0]
+                other = zipball.parent.joinpath("other.tmp")
+                zf.extractall(other)
+                original_rename(other.joinpath(top), result)
+            shutil.rmtree(other, ignore_errors=True)
+            # …then this caller loses the race to move its own copy into place
+            raise OSError(17, "File exists")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+
+    assert _extract_zipball(zipball) == result
     assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
 
     # No temporary files or directories are left behind
