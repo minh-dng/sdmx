@@ -2,13 +2,15 @@ import json
 import logging
 import re
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 import pytest
+import requests
 from requests import HTTPError, PreparedRequest
 
 import sdmx
+from sdmx.session import DEFAULT_TIMEOUT
 from sdmx.util.requests import save_response
 
 if TYPE_CHECKING:
@@ -49,6 +51,64 @@ def test_read_sdmx(tmp_path: "Path", specimen: "SpecimenCollection") -> None:
     # Using the format= argument forces a certain reader to be used
     with pytest.raises(json.JSONDecodeError):
         sdmx.read_sdmx(bad_file, format="JSON")
+
+
+def test_send_timeout(monkeypatch, testsource: str) -> None:
+    """The Session's timeout is applied to every request sent by Client."""
+    client = sdmx.Client(testsource)
+
+    captured: dict = {}
+
+    def spy(request, **kwargs):
+        captured.update(kwargs)
+        raise RuntimeError  # Interrupt before any network access
+
+    monkeypatch.setattr(client.session, "send", spy)
+
+    # Default: the Session's timeout attribute
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == 30.0
+
+    # A changed Session timeout is honoured
+    cast("sdmx.session.Session", client.session).timeout = 600.0
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == 600.0
+
+    # A per-request timeout= argument to get() takes precedence…
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL", timeout=123)
+    assert captured["timeout"] == 123
+
+    # …but is not sticky: the next request uses the Session timeout again
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == 600.0
+
+
+def test_send_timeout_plain_session(monkeypatch, testsource: str) -> None:
+    """A plain requests.Session without a timeout attribute gets the default timeout."""
+    client = sdmx.Client(testsource, session=requests.Session())
+    assert not hasattr(client.session, "timeout")
+
+    captured: dict = {}
+
+    def spy(request, **kwargs):
+        captured.update(kwargs)
+        raise RuntimeError  # Interrupt before any network access
+
+    monkeypatch.setattr(client.session, "send", spy)
+
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] == DEFAULT_TIMEOUT
+
+    # timeout=None on the Session allows requests to wait indefinitely
+    setattr(client.session, "timeout", None)
+    with pytest.raises(RuntimeError):
+        client.get("dataflow", "ALL")
+    assert captured["timeout"] is None
 
 
 class TestClient:
@@ -122,10 +182,8 @@ class TestClient:
 
         # Messages are logged
         assert "Client.session.verify=False replaces True" in caplog.messages
-        assert (
-            "Client.get() args {'allow_redirects': True, 'timeout': 123} replace "
-            "{'allow_redirects': False}" in caplog.messages
-        )
+        # …and per-request arguments to Session.send() are neither logged nor stored
+        assert not any("Client.get() args" in m for m in caplog.messages)
 
     def test_session_attrs1(
         self, testsource: str, session_with_stored_responses: "Session"

@@ -1,6 +1,6 @@
 import logging
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Literal, overload
+from typing import IO, TYPE_CHECKING, Literal, overload
 from warnings import warn
 
 import requests
@@ -9,7 +9,7 @@ from sdmx.model import common
 from sdmx.model.v21 import DataStructureDefinition
 from sdmx.reader import get_reader
 from sdmx.rest import Resource
-from sdmx.session import ResponseIO, Session
+from sdmx.session import DEFAULT_TIMEOUT, ResponseIO, Session
 from sdmx.source import NoSource, get_source, list_sources
 
 from . import message
@@ -49,7 +49,9 @@ class Client:
         :meth:`list_sources`.
     session :
         :class:`.requests.Session` instance. If not supplied, an instance of
-        :class:`.Session` is created.
+        :class:`.Session` is created. If a plain :class:`requests.Session` is supplied,
+        a default timeout of 30 seconds is applied to every request; set
+        :py:`session.timeout = None` to allow requests to wait indefinitely.
     log_level : int
         Override the package-wide logger with one of the
         :ref:`standard logging levels <py:levels>`.
@@ -68,9 +70,6 @@ class Client:
 
     #: :class:`.Session` for queries sent from the instance.
     session: requests.Session
-
-    # Stored keyword arguments "allow_redirects" and "timeout" for pre-requests.
-    _send_kwargs: dict[str, Any] = {}
 
     def __init__(
         self,
@@ -265,7 +264,7 @@ class Client:
 
         return requests.Request("get", url, params=parameters, headers=headers)
 
-    def _handle_get_kwargs(self, kwargs) -> dict:  # noqa: C901 TODO reduce complexity 12 → ≤10
+    def _handle_get_kwargs(self, kwargs) -> tuple[dict, dict]:  # noqa: C901 TODO reduce complexity 12 → ≤10
         if kwargs.pop("validate", None) is not None:
             warn("validate= keyword argument to Client.get()", DeprecationWarning)
 
@@ -323,19 +322,12 @@ class Client:
             # Store
             setattr(self.session, name, value)
 
-        # Separate kwargs for requests.Session.send()
+        # Separate kwargs for requests.Session.send(), applied to the current request
+        # only; the Session timeout applies otherwise
         send_kwargs = _collect("allow_redirects", "timeout")
-        if (
-            len(send_kwargs)
-            and len(self._send_kwargs)
-            and send_kwargs != self._send_kwargs
-        ):
-            log.debug(f"Client.get() args {send_kwargs} replace {self._send_kwargs}")
 
-        self._send_kwargs.update(send_kwargs)
-
-        # Return remaining kwargs
-        return kwargs
+        # Return remaining kwargs, and those for .send()
+        return kwargs, send_kwargs
 
     @overload
     def get(
@@ -426,6 +418,9 @@ class Client:
 
         Other Parameters
         ----------------
+        allow_redirects : bool
+            If :obj:`False`, do not follow HTTP redirects for the current request.
+            Default: :obj:`True`, as for :meth:`requests.Session.send`.
         dsd : :class:`DataStructureDefinition <.BaseDataStructureDefinition>`
             Existing object used to validate the `key` argument. If not provided, an
             additional query executed to retrieve a DSD in order to validate the `key`.
@@ -456,6 +451,11 @@ class Client:
             other providers, but do not provide any (meta)data themselves.
         resource : :class:`~.MaintainableArtefact` subclass
             Object to retrieve. If given, `resource_type` and `resource_id` are ignored.
+        timeout : float
+            Timeout in seconds for the current request only, overriding the
+            :attr:`.Session.timeout`. Default: the Session timeout; or
+            :data:`.DEFAULT_TIMEOUT` for a :class:`requests.Session` without a
+            `timeout` attribute.
         version : str
             :attr:`~.VersionableArtefact.version>` of a resource to retrieve. Default:
             the keyword 'latest'.
@@ -475,7 +475,7 @@ class Client:
         # Insert resource_type and resource_id into kwargs
         kwargs.update(dict(resource_type=resource_type, resource_id=resource_id))
 
-        kwargs = self._handle_get_kwargs(kwargs)
+        kwargs, send_kwargs = self._handle_get_kwargs(kwargs)
 
         # Handle arguments
         if "url" in kwargs:
@@ -500,8 +500,13 @@ class Client:
                 pass
 
         try:
-            # Send the request
-            response = self.session.send(req_prepared, **self._send_kwargs)
+            # Send the request; the Session timeout — or the default — applies unless
+            # overridden per request
+            send_kwargs = {
+                "timeout": getattr(self.session, "timeout", DEFAULT_TIMEOUT),
+                **send_kwargs,
+            }
+            response = self.session.send(req_prepared, **send_kwargs)
             response.raise_for_status()
         except requests.exceptions.ConnectionError as e:
             raise e from None

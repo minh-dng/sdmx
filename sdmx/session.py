@@ -9,6 +9,10 @@ if TYPE_CHECKING:
     import os
 
 
+#: Default timeout in seconds, applied to every request.
+DEFAULT_TIMEOUT: float = 30.0
+
+
 class Session(CacheMixin, requests.Session):
     """:class:`requests.Session` with optional caching.
 
@@ -47,7 +51,7 @@ class Session(CacheMixin, requests.Session):
 
     timeout: float
 
-    def __init__(self, timeout: float = 30.0, **kwargs):
+    def __init__(self, timeout: float = DEFAULT_TIMEOUT, **kwargs):
         # Store timeout; not an attribute of requests.Session
         self.timeout = timeout
 
