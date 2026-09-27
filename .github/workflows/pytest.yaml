@@ -70,10 +70,11 @@ jobs:
 
     - name: Run pytest
       run: |
-        # Fetch test data only when not restored from cache, so that most runs need
-        # no network access; the cache is refreshed by the first run of each week
+        # Fetch test data only when not restored from a cache that contains a
+        # completed checkout, so that most runs need no network access; the cache is
+        # refreshed by the first run of each week
         args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
-        if [ ! -e "${{ steps.sdmx-cache.outputs.dir }}/test-data/.git" ]; then
+        if ! git -C "${{ steps.sdmx-cache.outputs.dir }}/test-data" rev-parse HEAD &>/dev/null; then
           args+=(--sdmx-fetch-data)
         fi
         uv run --no-sync pytest "${args[@]}"
