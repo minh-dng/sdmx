@@ -72,6 +72,10 @@ jobs:
         # refreshed by the first run of each week
         args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
         data_dir="${{ steps.sdmx-cache.outputs.dir }}/test-data"
+        # Git Bash needs a POSIX path for rm on Windows; Git also accepts it.
+        if command -v cygpath &>/dev/null; then
+          data_dir="$(cygpath -u "$data_dir")"
+        fi
         if ! git -C "$data_dir" rev-parse HEAD &>/dev/null ||
            ! git -C "$data_dir" diff --quiet HEAD --; then
           # Only this disposable CI checkout: fetch does not restore deleted files
