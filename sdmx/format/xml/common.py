@@ -357,7 +357,11 @@ def _extract_zipball(zipball: Path, force: bool = False) -> Path:
         tmp = zipball.parent.joinpath(f"{zipball.name}.tmp{os.getpid()}")
         rmtree(tmp, ignore_errors=True)
         zf.extractall(tmp)
-        if result.exists():
+        if result.exists() and not force:
+            # Another caller published the extraction while we worked; keep theirs
+            rmtree(tmp, ignore_errors=True)
+            return result
+        elif result.exists():
             # Force: move the existing copy aside, and only discard it once the
             # replacement is in place; restore it if the replacement fails
             old = zipball.parent.joinpath(f"{zipball.name}.old{os.getpid()}")

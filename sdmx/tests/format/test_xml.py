@@ -12,7 +12,12 @@ import responses
 
 import sdmx
 from sdmx.format import Version, xml
-from sdmx.format.xml.common import _extracted_zipball, _fetch_with_retries
+from sdmx.format.xml.common import (
+    _download_zipball,
+    _extract_zipball,
+    _extracted_zipball,
+    _fetch_with_retries,
+)
 from sdmx.message import StructureMessage
 from sdmx.model import v21
 
@@ -204,6 +209,34 @@ def test_extracted_zipball_force(no_sleep, cache_dir):
 
     assert first == second
     assert second.joinpath("schemas", "SDMXMessage.xsd").read_text() == "<xs:schema/>"
+
+    # No temporary files or directories are left behind
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
+def test_extract_zipball_concurrent(no_sleep, cache_dir, monkeypatch):
+    """If another caller publishes the extraction while this one works, keep theirs."""
+    with responses.RequestsMock() as mock:
+        _mock_gh_api(mock)
+        zipball = cache_dir.joinpath("sdmx-ml-v2.1.zip")
+        _download_zipball(zipball, "v2.1")
+
+    original_extractall = zipfile.ZipFile.extractall
+
+    def extractall_and_publish(self, *args, **kwargs):
+        original_extractall(self, *args, **kwargs)
+        # Simulate a concurrent caller publishing its extraction while this one extracts
+        top = self.namelist()[0].split("/")[0]
+        Path(*args).joinpath(top).rename(zipball.parent.joinpath(top))
+
+    monkeypatch.setattr(zipfile.ZipFile, "extractall", extractall_and_publish)
+
+    result = _extract_zipball(zipball)
+
+    assert result.joinpath("schemas", "SDMXMessage.xsd").exists()
 
     # No temporary files or directories are left behind
     assert sorted(p.name for p in cache_dir.iterdir()) == [
