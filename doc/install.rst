@@ -4,7 +4,7 @@ Installation
 Dependencies
 ============
 
-:mod:`sdmx` is a pure `Python <https://python.org>`_ package requiring Python 3.10 or higher.
+:mod:`sdmx` is a pure `Python <https://python.org>`_ package requiring Python 3.11 or higher.
 Install the current ``main`` branch directly from GitHub::
 
     $ python -m pip install "sdmx1 @ git+https://github.com/minh-dng/sdmx.git"

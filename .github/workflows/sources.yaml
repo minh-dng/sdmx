@@ -64,16 +64,16 @@ jobs:
     name: ${{ matrix.source }}
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Set up uv, Python
-      uses: astral-sh/setup-uv@v8.0.0
+      uses: astral-sh/setup-uv@v10.2.0
       with:
         activate-environment: true
         python-version: ${{ env.python-version }}
 
     - name: Install the package and dependencies
-      run: uv pip install .[tests] pytest-regex
+      run: uv pip install '.[tests]' pytest-regex
 
     - name: Tests of ${{ matrix.source }} data source
       continue-on-error: true
@@ -86,12 +86,12 @@ jobs:
           --numprocesses=auto
 
     - name: Upload ${{ matrix.source }} results as a build artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: source-tests-${{ matrix.source }}
         path: source-tests/*.json
         compression-level: 1
 
     - name: Upload test coverage to Codecov.io
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
 
