@@ -8,6 +8,8 @@ $ pytest -m network [...]
 
 import logging
 import re
+from pathlib import Path
+from textwrap import dedent
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,13 +19,33 @@ import pytest
 import sdmx
 from sdmx import Client
 from sdmx.dictlike import DictLike
-from sdmx.model.v21 import GenericDataSet
+from sdmx.model.v21 import Agency, Code, Codelist, GenericDataSet
 from sdmx.testing import assert_pd_equal
 
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import sdmx.message
+
+
+def test_example_codelists(capsys):
+    """The published example must accept codelist versions supplied by the service."""
+    sm = sdmx.message.StructureMessage()
+    for id_ in ("AGE", "SEX", "UNIT", "OTHER"):
+        cl = Codelist(id=id_, version="999.0", maintainer=Agency(id="ESTAT"))
+        cl.append(Code(id="TEST", name=f"example {id_}"))
+        sm.add(cl)
+
+    doc = Path(__file__).resolve().parents[2].joinpath("doc/example.rst").read_text()
+    block = next(
+        block
+        for block in doc.split(".. ipython:: python\n\n")[1:]
+        if block.startswith("    for cl in ")
+    )
+    exec(dedent(block.split("\n\n", 1)[0]), {"sm": sm, "sdmx": sdmx})
+    output = capsys.readouterr().out
+    assert all(f"example {id_}" in output for id_ in ("AGE", "SEX", "UNIT"))
+    assert "example OTHER" not in output
 
 
 @pytest.mark.network
@@ -35,18 +57,9 @@ def test_example() -> None:
 
     sm: "sdmx.message.StructureMessage" = estat.datastructure("UNE_RT_A")
 
-    # Identify partial URNs for some code lists
-    partial_urns = []
     for cl in sm.codelist.values():
-        if cl.id in ("AGE", "UNIT", "SEX"):
-            partial_urns.append(cl.urn.rpartition("=")[2])
-    # These strings should be the ones hard-coded in example.rst
-    log.info(f"for cl in {repr(partial_urns).strip('[]')}:")
-
-    # NB Use partial URNs to match even if only single versions are stored under keys
-    #    like "AGE"
-    for cl in partial_urns:
-        print(sdmx.to_pandas(sm.get(cl)))
+        if cl.id in ("AGE", "SEX", "UNIT"):
+            print(sdmx.to_pandas(cl))
 
     dm = estat.data("UNE_RT_A", key={"geo": "EL+ES+IE"}, params={"startPeriod": "2007"})
 

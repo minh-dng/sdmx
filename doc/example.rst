@@ -31,8 +31,9 @@ and :func:`.to_pandas` to convert to :class:`.pandas.Series`:
 
 .. ipython:: python
 
-    for cl in "ESTAT:AGE(16.0)", "ESTAT:SEX(1.13)", "ESTAT:UNIT(75.0)":
-        print(sdmx.to_pandas(sm.get(cl)))
+    for cl in sm.codelist.values():
+        if cl.id in ("AGE", "SEX", "UNIT"):
+            print(sdmx.to_pandas(cl))
 
 Next, we download a **data set** containing a portion of the data in this data flow, structured by this DSD.
 To obtain data only for Greece, Ireland and Spain, we use codes from the code list with the ID ‘GEO’ to specify a **key** for the dimension with the ID ‘geo’. [3]_

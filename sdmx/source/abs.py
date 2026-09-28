@@ -4,6 +4,7 @@ from requests.structures import CaseInsensitiveDict
 
 from sdmx.rest import Resource
 
+from . import DataContentType
 from . import Source as BaseSource
 
 re_500 = re.compile(r"(An error has occurred)\.")
@@ -13,15 +14,22 @@ class Source(BaseSource):
     _id = "ABS"
 
     def modify_request_args(self, kwargs):
-        """Request ABS structural metadata explicitly as SDMX-ML."""
+        """Select the requested ABS data format; request metadata as SDMX-ML."""
+        resource_type = kwargs.get("resource_type")
+        data_format = kwargs.pop("format", self.data_content_type)
+        headers = CaseInsensitiveDict(kwargs.get("headers", {}))
+        kwargs["headers"] = headers
+
+        if resource_type is Resource.data:
+            if data_format is DataContentType.JSON:
+                headers.setdefault("Accept", "application/json")
+            elif data_format is not DataContentType.XML:
+                raise ValueError("ABS format must be DataContentType.JSON or XML")
+
         super().modify_request_args(kwargs)
 
-        if kwargs.get("resource_type") in (None, Resource.data):
-            return
-
-        headers = CaseInsensitiveDict(kwargs.get("headers", {}))
-        headers.setdefault("Accept", "application/xml")
-        kwargs["headers"] = headers
+        if resource_type is not None:
+            headers.setdefault("Accept", "application/xml")
 
     def handle_response(self, response, content):
         """Handle ABS' own text/html error page for some endpoints."""

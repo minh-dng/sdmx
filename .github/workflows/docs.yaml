@@ -3,12 +3,14 @@ name: Build docs
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 # Deploy to the same gh-pages environment previously used by sources.yaml;
 # the Sphinx site replaces the source-test report as the Pages content.
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -28,7 +30,8 @@ jobs:
         python-version: ${{ env.python-version }}
 
     - name: Install the package and docs dependencies
-      run: uv pip install --editable '.[docs]'
+      # Executed examples need caching; autodoc imports sdmx.testing.
+      run: uv pip install --editable '.[docs,tests]'
 
     - name: Build HTML documentation
       run: make -C doc html
@@ -40,6 +43,7 @@ jobs:
   # This job is as described at https://github.com/actions/deploy-pages
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
 
     runs-on: ubuntu-latest
 

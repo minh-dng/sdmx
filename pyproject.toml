@@ -95,7 +95,7 @@ addopts = [
   "sdmx",
   "--cov=sdmx",
   "--cov-report=",
-  "-m not experimental and not source",
+  "-m not experimental and not network and not source",
 ]
 markers = [
   "experimental: test of experimental features",
