@@ -17,7 +17,9 @@ Next release
   that installing SDMX-ML schemas requires no requests to w3.org.
 - Make :func:`.install_schemas` resilient to transient network failures: retry HTTP
   error responses, reuse cached schema archives without downloading, and replace
-  corrupt or partially written cache entries.
+  corrupt or partially written cache entries. Validate archive member checksums
+  before replacing a cached archive, and prevent bundled-schema copying from
+  recreating an extraction moved aside by a concurrent forced replacement.
 
 v2.27.0 (2026-08-06)
 ====================
