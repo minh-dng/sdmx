@@ -267,7 +267,7 @@ def _fetch_with_retries(
 
 
 def _copy_bundled_schemas(target_dir: Path) -> None:
-    """Copy the bundled XSD documents (see the LICENSE alongside them) to `target_dir`.
+    """Copy the bundled XSD documents into an existing `target_dir`.
 
     The SDMX-ML schemas reference XHTML structured content, so SDMXMessage.xsd must be
     accompanied by a copy of :file:`xhtml1-strict.xsd`, which itself imports
@@ -275,7 +275,8 @@ def _copy_bundled_schemas(target_dir: Path) -> None:
     Software and Document License) are bundled with the package, so no network access
     is required.
     """
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # Never recreate an extraction moved aside by a forced replacement. A stale
+    # caller must fail rather than publish a directory containing only bundled XSDs.
     for name in _BUNDLED_SCHEMAS:
         source = importlib.resources.files("sdmx.format.xml").joinpath(
             f"schemas/{name}"
@@ -327,8 +328,9 @@ def _download_zipball(target: Path, version_path: str) -> None:
 
         # Validate before moving into place, so that a corrupt download never replaces
         # the cached zipball
-        with zipfile.ZipFile(tmp):
-            pass
+        with zipfile.ZipFile(tmp) as zf:
+            if bad_member := zf.testzip():
+                raise zipfile.BadZipFile(f"Bad CRC for {bad_member!r}")
 
         tmp.replace(target)
     finally:

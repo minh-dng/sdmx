@@ -252,6 +252,70 @@ def test_extracted_zipball_force(no_sleep, cache_dir):
     ]
 
 
+def test_download_zipball_preserves_cache_on_bad_crc(cache_dir):
+    """A damaged member must not replace an otherwise valid cached archive."""
+    zipball = cache_dir / "sdmx-ml-v2.1.zip"
+    original = _zipball_bytes()
+    zipball.write_bytes(original)
+    # Keep the ZIP metadata intact, but invalidate the schema member's CRC.
+    damaged = original.replace(b"<xs:schema/>", b"<xs:broken/>")
+    with responses.RequestsMock() as mock:
+        mock.get(
+            f"{GH_API}/releases/tags/v2.1",
+            json={"zipball_url": f"{GH_API}/zipball/v2.1"},
+        )
+        mock.get(f"{GH_API}/zipball/v2.1", body=damaged)
+        with pytest.raises(zipfile.BadZipFile):
+            _download_zipball(zipball, "v2.1")
+
+    assert zipball.read_bytes() == original
+    assert list(cache_dir.iterdir()) == [zipball]
+
+
+@pytest.mark.parametrize("fail_publication", [False, True])
+def test_extract_zipball_force_during_bundled_copy(
+    cache_dir, monkeypatch, fail_publication
+):
+    """A stale copier cannot recreate the destination or destroy the backup."""
+    zipball = cache_dir / "sdmx-ml-v2.1.zip"
+    zipball.write_bytes(_zipball_bytes())
+    result = _extract_zipball(zipball)
+    result.joinpath("schemas", "SDMXMessage.xsd").write_text("stale content")
+    original_rename = Path.rename
+    copied = False
+
+    def rename(self, target):
+        nonlocal copied
+        if self == result:
+            moved = original_rename(self, target)
+            # A caller holding the old extraction path resumes after it was moved.
+            with pytest.raises(FileNotFoundError):
+                common._copy_bundled_schemas(result / "schemas")
+            copied = True
+            assert not result.exists()
+            return moved
+        if target == result and self.parent.name.startswith(f"{zipball.name}.tmp"):
+            if fail_publication:
+                raise OSError("publication failed")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    if fail_publication:
+        with pytest.raises(OSError, match="publication failed"):
+            _extract_zipball(zipball, force=True)
+    else:
+        assert _extract_zipball(zipball, force=True) == result
+
+    assert copied
+    assert result.joinpath("schemas", "SDMXMessage.xsd").read_text() == (
+        "stale content" if fail_publication else "<xs:schema/>"
+    )
+    assert sorted(p.name for p in cache_dir.iterdir()) == [
+        "sdmx-ml-v2.1",
+        "sdmx-ml-v2.1.zip",
+    ]
+
+
 def test_extract_zipball_concurrent(no_sleep, cache_dir, monkeypatch):
     """If another caller publishes the extraction while this one works, keep theirs."""
     with responses.RequestsMock() as mock:
