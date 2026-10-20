@@ -56,7 +56,7 @@ Contributing and getting help
 
 - Read :file:`CONTRIBUTING.md` in the source distribution
   or in the Git repository
-  (`here <https://github.com/khaeru/sdmx/blob/main/CONTRIBUTING.md>`__)
+  (`here <https://github.com/minh-dng/sdmx/blob/main/CONTRIBUTING.md>`__)
   and/or :doc:`dev` linked above.
 - Report issues, suggest features, or browse the source code on
   `GitHub <https://github.com/minh-dng/sdmx>`_.

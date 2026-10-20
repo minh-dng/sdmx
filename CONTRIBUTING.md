@@ -5,14 +5,14 @@ Would-be contributors are kindly asked to:
 - Read and understand the following Code of Conduct.
 - Read the documentation, in particular:
 
-  - The [index page](https://sdmx1.readthedocs.io)
+  - The [index page](https://minh-dng.github.io/sdmx/)
     (doc/index.rst in the source distribution or Git repository)
     gives general information about project communications.
-  - The [‘Development’ page](https://sdmx1.readthedocs.io/en/latest/dev.html)
+  - The [‘Development’ page](https://minh-dng.github.io/sdmx/dev.html)
     (doc/dev.rst)
     gives specific instructions for code changes.
 
-- Open an issue or pull request at https://github.com/khaeru/sdmx,
+- Open an issue or pull request at https://github.com/minh-dng/sdmx,
   or otherwise get in touch as indicated at the above locations.
 
 # Code of Conduct

@@ -439,6 +439,21 @@ class TestDataStructureDefinition:
         with pytest.raises(ValueError):
             dsd.make_constraint(dict(foo="1", bar="2+5", qux="7"))
 
+    def test_make_constraint_subclass(self) -> None:
+        class CustomDSD(DataStructureDefinition):
+            pass
+
+        class NestedDSD(CustomDSD):
+            pass
+
+        for cls in (CustomDSD, NestedDSD):
+            dsd = cls.from_keys([Key(foo="1"), Key(foo="2")])
+            constraint = dsd.make_constraint({"foo": "1"})
+
+            assert isinstance(constraint, ContentConstraint)
+            assert Key(foo="1") in constraint
+            assert Key(foo="2") not in constraint
+
     def test_make_key(self, dsd) -> None:
         with pytest.raises(KeyError):
             dsd.make_key(GroupKey, None, group_id="FOO")

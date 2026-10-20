@@ -4,7 +4,7 @@ Development
 This page describes the development of :mod:`sdmx`.
 Contributions are welcome!
 Please read :file:`CONTRIBUTING.md` included in the source distribution or Git repository
-(`here <https://github.com/khaeru/sdmx/blob/main/CONTRIBUTING.md>`__),
+(`here <https://github.com/minh-dng/sdmx/blob/main/CONTRIBUTING.md>`__),
 in particular the Code of Conduct.
 
 - For current development priorities,

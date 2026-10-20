@@ -1361,7 +1361,12 @@ class BaseDataStructureDefinition(
             if `key` contains a dimension IDs not appearing in :attr:`dimensions`.
         """
         # Retrieve the subclass' constraint type by type introspection
-        args = get_args(get_original_bases(type(self))[0])
+        args = next(
+            get_args(base)
+            for cls in type(self).__mro__
+            for base in get_original_bases(cls)
+            if get_origin(base) is BaseDataStructureDefinition
+        )
         ConstraintType: type[ConstraintT] = args[0]
         # Same for the MemberSelection and MemberValue types
         # TODO Retrieve this via ConstraintType

@@ -62,21 +62,18 @@ class DictLike(dict, MutableMapping[KT, VT], Comparable):
         """Validate one `key`/`value` pair."""
         key, value = kv
         try:
-            kt, vt = self._types
+            kt = self._types[0]
         except AttributeError:
             pass
         else:
-            if isinstance(vt, UnionType):
-                vt = get_args(vt)
-            else:
-                vt = get_origin(vt) or vt
             if not isinstance(key, kt):
                 raise TypeError(
                     f"Expected key type {kt.__name__}; got {type(key).__name__}"
                 )
             elif not self.is_value_type(value):
+                value_type = " | ".join(t.__name__ for t in self.value_types)
                 raise TypeError(
-                    f"Expected value type {vt.__name__}; got {type(value).__name__}"
+                    f"Expected value type {value_type}; got {type(value).__name__}"
                 )
 
         return key, value
