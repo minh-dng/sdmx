@@ -1,6 +1,6 @@
 import logging
 from functools import partial
-from typing import IO, TYPE_CHECKING, Literal, overload
+from typing import IO, TYPE_CHECKING, Any, Literal, overload
 from warnings import warn
 
 import requests
