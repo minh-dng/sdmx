@@ -1,6 +1,6 @@
 import logging
 from functools import partial
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Any, Literal, overload
 from warnings import warn
 
 import requests
@@ -12,6 +12,8 @@ from sdmx.rest import Resource
 from sdmx.session import DEFAULT_TIMEOUT, ResponseIO, Session
 from sdmx.source import NoSource, get_source, list_sources
 
+from . import message
+
 if TYPE_CHECKING:
     import io
     import os
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def Request(*args, **kwargs):
+def Request(*args, **kwargs) -> "Client":
     """Compatibility function for :class:`Client`.
 
     .. versionadded:: 2.0
@@ -137,7 +139,7 @@ class Client:
         )
         self.session.timeout = value
 
-    def series_keys(self, flow_id, use_cache=True):
+    def series_keys(self, flow_id, use_cache=True) -> list[common.SeriesKey]:
         """Return all :class:`.SeriesKey` for *flow_id*.
 
         Returns
@@ -151,7 +153,9 @@ class Client:
             .series.keys()
         )
 
-    def _make_key(self, resource_type, resource_id, key, dsd):
+    def _make_key(
+        self, resource_type, resource_id, key, dsd
+    ) -> tuple[str, DataStructureDefinition]:
         """Validate `key` if possible.
 
         If key is :class:`dict`, validate items against `dsd` and construct a query
@@ -181,7 +185,9 @@ class Client:
             if dsd.is_external_reference:
                 # DataStructureDefinition was not retrieved with the Dataflow query;
                 # retrieve it explicitly
-                dsd = self.get(resource=dsd, use_cache=True).structure[dsd.id]
+                msg = self.get(resource=dsd, use_cache=True)
+                assert isinstance(msg, message.StructureMessage)
+                dsd = msg.structure[dsd.id]
         else:
             # Construct a DSD from the keys
             dsd = DataStructureDefinition.from_keys(self.series_keys(resource_id))
@@ -191,7 +197,7 @@ class Client:
 
         return cc.to_query_string(dsd), dsd
 
-    def _request_from_args(self, kwargs):
+    def _request_from_args(self, kwargs) -> "requests.Request":
         """Validate arguments and prepare pieces for a request."""
         headers = kwargs.pop("headers", {})
 
@@ -258,7 +264,7 @@ class Client:
 
         return requests.Request("get", url, params=parameters, headers=headers)
 
-    def _handle_get_kwargs(self, kwargs):  # noqa: C901 TODO reduce complexity 12 → ≤10
+    def _handle_get_kwargs(self, kwargs) -> tuple[dict, dict]:  # noqa: C901 TODO reduce complexity 12 → ≤10
         if kwargs.pop("validate", None) is not None:
             warn("validate= keyword argument to Client.get()", DeprecationWarning)
 
@@ -303,7 +309,7 @@ class Client:
         if self.source:
             self.source.modify_request_args(kwargs)
 
-        def _collect(*keywords):
+        def _collect(*keywords) -> dict[str, Any]:
             return {kw: kwargs.pop(kw) for kw in keywords if kw in kwargs}
 
         # Update session attributes. These changes persist.
@@ -322,6 +328,28 @@ class Client:
 
         # Return remaining kwargs, and those for .send()
         return kwargs, send_kwargs
+
+    @overload
+    def get(
+        self,
+        resource_type: str | Resource | None = None,
+        resource_id: str | None = None,
+        tofile: "os.PathLike | IO | None" = None,
+        use_cache: bool = False,
+        dry_run: Literal[False] = False,
+        **kwargs,
+    ) -> "sdmx.message.Message": ...
+
+    @overload
+    def get(
+        self,
+        resource_type: str | Resource | None = None,
+        resource_id: str | None = None,
+        tofile: "os.PathLike | IO | None" = None,
+        use_cache: bool = False,
+        dry_run: Literal[True] = True,
+        **kwargs,
+    ) -> "requests.Request": ...
 
     def get(
         self,
@@ -526,7 +554,7 @@ class Client:
 
         return msg
 
-    def preview_data(self, flow_id, key={}):
+    def preview_data(self, flow_id, key={}) -> list[common.SeriesKey]:
         """Return a preview of data.
 
         For the Dataflow `flow_id`, return all series keys matching `key`. Uses a
@@ -574,6 +602,6 @@ class Client:
             return list(all_keys)
 
 
-def read_url(url, **kwargs):
+def read_url(url, **kwargs) -> "sdmx.message.Message | requests.Request":
     """Request a URL directly."""
     return Client().get(url=url, **kwargs)

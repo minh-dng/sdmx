@@ -3,8 +3,20 @@
 What's new?
 ***********
 
-.. Next release
-   ============
+Next release
+============
+
+Includes changes from upstream v2.28.0 (2026-10-18).
+
+- Add :file:`CONTRIBUTING.md`, including a Code of Conduct for contributors (:pull:`292`).
+- :mod:`sdmx` supports Python 3.15, `released 2026-10-09 <https://www.python.org/downloads/release/python-3150/>`_ (:pull:`293`).
+- :attr:`v30.MemberSelection.data_content_region` is a :class:`list` (:pull:`293`).
+  This now the same type as :class:`v21.MemberSelection`.
+- Bug fix for reading :xml:`<com:Annotation>`
+  in which :xml:`<com:AnnotationTitle>` is present but with no XML text nodes (:pull:`291`).
+- Expand and improve type hinting (:pull:`293`).
+- Raise :class:`TypeError` for invalid values in union-typed :class:`.DictLike` collections.
+- Restore constraint creation for subclasses of concrete data structure definitions.
 
 v2.28.0 (2026-09-29)
 ====================

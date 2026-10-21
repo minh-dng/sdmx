@@ -85,6 +85,19 @@ class TestDictLike:
         with pytest.raises(TypeError):
             f.items[123] = 456
 
+    @pytest.mark.parametrize(
+        "value_type, expected",
+        [(int, "int"), (int | str, "int | str"), (list[int], "list")],
+    )
+    def test_value_validation(self, value_type, expected) -> None:
+        dl = DictLike.with_types(str, value_type)
+
+        with pytest.raises(TypeError) as exc:
+            dl["invalid"] = None
+
+        assert str(exc.value) == f"Expected value type {expected}; got NoneType"
+        assert not dl
+
     def test_compare(self, caplog: "pytest.LogCaptureFixture") -> None:
         dl1: "DictLike" = DictLike(a="foo", b="bar")
         dl2: "DictLike" = DictLike(c="baz", a="foo")
