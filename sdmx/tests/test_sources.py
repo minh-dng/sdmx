@@ -282,15 +282,38 @@ class TestESTAT(DataSourceTest):
         from sdmx.util.requests import save_response
 
         for url, args in ESTAT_STORED.items():
+            args = dict(args)
             args["content"] = test_data_path.joinpath(args["content"]).read_bytes()
             save_response(client_with_stored_responses.session, "GET", url, **args)
 
         yield client_with_stored_responses
 
-    def test_xml_footer(self, mock):
-        msg = mock.get(url=list(ESTAT_STORED.keys())[0], get_footer_url=(1, 1))
+    @pytest.mark.parametrize("failures", [0, 1, 2])
+    def test_xml_footer(self, mock, monkeypatch, failures):
+        slept = []
+        monkeypatch.setattr("sdmx.source.estat.sleep", slept.append)
+        get = mock.get
+        calls = 0
 
-        assert len(msg.data[0].obs) == 43
+        def get_when_ready(*args, **kwargs):
+            nonlocal calls
+            if kwargs.get("url") == list(ESTAT_STORED)[1]:
+                calls += 1
+                if calls <= failures:
+                    raise HTTPError("File is not ready")
+            return get(*args, **kwargs)
+
+        monkeypatch.setattr(mock, "get", get_when_ready)
+
+        if failures == 2:
+            with pytest.raises(HTTPError, match="File is not ready"):
+                mock.get(url=list(ESTAT_STORED)[0], get_footer_url=(7, 2))
+        else:
+            msg = mock.get(url=list(ESTAT_STORED)[0], get_footer_url=(7, 2))
+            assert len(msg.data[0].obs) == 43
+
+        assert calls == min(failures + 1, 2)
+        assert slept == [7] * calls
 
     @pytest.mark.network
     def test_ss_data(self, client):
@@ -536,7 +559,7 @@ class TestINEGI(DataSourceTest):
 
     endpoint_args = dict(
         # 404 Not Found when the own source's ID ("INEGI") is used
-        conceptscheme=dict(provider="ALL")
+        conceptscheme=dict(agency_id="ALL")
     )
 
 

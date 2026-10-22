@@ -6,13 +6,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from importlib import import_module
 from io import IOBase
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from requests import Response
 
 from sdmx.format import Version
-from sdmx.model.v21 import DataStructureDefinition
 from sdmx.rest import Resource
+from sdmx.rest.common import RequestSpec
 
 if TYPE_CHECKING:
     from typing import TypeVar
@@ -58,14 +58,21 @@ class Source:
     This class describes the location and features supported by an SDMX REST API data
     source/web service.
 
-    It also provides three hooks, with default implementations. Subclasses may override
-    the hooks in order to handle specific features of different REST web services:
+    Simple differences between services are data, given as attributes: :attr:`headers`,
+    :attr:`structure_agency`, :attr:`supports`. For other differences, the class has
+    three hooks with default implementations. Subclasses may override the hooks in order
+    to handle specific features of different REST web services:
 
     .. autosummary::
+       modify_request
        handle_response
        finish_message
-       modify_request_args
     """
+
+    #: Names of arguments to :meth:`.Client.get` that are meant for the hooks of this
+    #: source, and so are not parameters of the URL. They appear in
+    #: :attr:`.RequestSpec.options`.
+    hook_options: ClassVar[frozenset[str]] = frozenset()
 
     #: :attr:`~.IdentifiableArtefact.id` of the :attr:`DataProvider`.
     id: str
@@ -76,8 +83,14 @@ class Source:
     #: Human-readable name of the data source.
     name: str
 
-    #: Additional HTTP headers to supply by default with all requests.
+    #: Default HTTP headers. The keys are names of :class:`.Resource` members, or "*" for
+    #: all of them; the values map header names to values. Headers given by the caller of :meth:`.Client.get`
+    #: replace these, one by one.
     headers: dict[str, Any] = field(default_factory=dict)
+
+    #: ID of the agency to use in queries for structures (everything but data), if the
+    #: caller gives none. Default: the :attr:`id` of the source.
+    structure_agency: str | None = None
 
     #: :class:`.DataContentType` indicating the type of data returned by the source.
     data_content_type: DataContentType = DataContentType.XML
@@ -149,53 +162,49 @@ class Source:
             raise NotImplementedError(f"Query against {self.versions}")
 
     # Hooks
+    def modify_request(self, request: RequestSpec) -> None:
+        """Adjust a query before its URL is built.
+
+        This hook is called by :meth:`.Client.get` with the description of the query,
+        which it edits in place. It is not called for queries to a complete URL.
+
+        A source should only fill what the caller left out, for instance with
+        :py:`request.headers.setdefault(…)`. After the hook, :meth:`.Client.get`
+        supplies, for what is still missing: the :attr:`structure_agency`; an
+        ``Accept`` header for structure-specific data, if a DSD is given; and the
+        :attr:`headers`.
+
+        The default implementation does nothing. See :meth:`.abs.Source.modify_request`
+        for an example override.
+        """
+
     def handle_response(
         self, response: Response, content: IOBase
     ) -> tuple[Response, IOBase]:
-        """Handle response content of unknown type.
+        """Handle a response that needs more than a reader to be understood.
 
-        This hook is called by :meth:`.Client.get` *only* when the `content` cannot be
-        parsed as XML or JSON.
+        This hook is called by :meth:`.Client.get` for every response, before a reader
+        is chosen from the ``content-type`` header or the content. Use it only for
+        behaviour of the service itself, such as error pages or archives.
 
         See :meth:`.estat.Source.handle_response` and
-        :meth:`.sgr.Source.handle_response` for example implementations.
+        :meth:`.abs.Source.handle_response` for example implementations.
         """
         return response, content
 
-    def finish_message(self, message: "TMessage", request, **kwargs) -> "TMessage":
+    def finish_message(
+        self, message: "TMessage", client, request: RequestSpec
+    ) -> "TMessage":
         """Postprocess retrieved message.
 
         This hook is called by :meth:`.Client.get` after a :class:`.Message` object has
-        been successfully parsed from the query response.
+        been successfully parsed from the query response. `client` is the
+        :class:`.Client` that sent the query; `request` is its description, including
+        the :attr:`~.RequestSpec.options` for this hook.
 
         See :meth:`.estat.Source.finish_message` for an example implementation.
         """
         return message
-
-    def modify_request_args(self, kwargs) -> None:
-        """Modify arguments used to build query URL.
-
-        This hook is called by :meth:`.Client.get` to modify the keyword arguments
-        before the query URL is built.
-
-        The default implementation handles requests for 'structure-specific data' by
-        adding an HTTP 'Accepts:' header when a 'dsd' is supplied as one of the
-        `kwargs`.
-
-        See :meth:`.sgr.Source.modify_request_args` for an example override.
-
-        Returns
-        -------
-        None
-        """
-        if self.data_content_type is DataContentType.XML:
-            dsd = kwargs.get("dsd", None)
-            if isinstance(dsd, DataStructureDefinition):
-                kwargs.setdefault("headers", {})
-                kwargs["headers"].setdefault(
-                    "Accept",
-                    "application/vnd.sdmx.structurespecificdata+xml;version=2.1",
-                )
 
 
 @dataclass
@@ -236,7 +245,7 @@ def add_source(
         If :obj:`True`, replace any existing data source with *id*. Otherwise, raise
         :class:`ValueError`.
     **kwargs
-        Optional callbacks for *handle_response* and *finish_message* hooks.
+        Further attributes of the :class:`Source`; these replace those in `info`.
 
     """
     _info = json.loads(info) if isinstance(info, str) else info

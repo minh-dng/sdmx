@@ -9,7 +9,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 from urllib.parse import urlsplit, urlunsplit
 
+from requests.structures import CaseInsensitiveDict
+
 if TYPE_CHECKING:
+    import sdmx.model.v21
     import sdmx.source
 
 # Mapping from Resource value to class name.
@@ -140,6 +143,55 @@ class Resource(str, Enum):
     @classmethod
     def describe(cls) -> str:
         return "{" + " ".join(v.name for v in cls._member_map_.values()) + "}"
+
+
+@dataclass
+class RequestSpec:
+    """Description of one SDMX-REST query.
+
+    :meth:`.Client.get` builds an instance from its arguments, passes it to
+    :meth:`sdmx.source.Source.modify_request`, and then builds the URL and headers from it. The
+    source edits the instance in place; no other state is shared between the two.
+    """
+
+    #: Type of resource to retrieve. :any:`None` for a request to a complete URL.
+    resource_type: Resource | None
+
+    #: ID of the resource, or :any:`None` for all resources of the type.
+    resource_id: str | None = None
+
+    #: ID of the maintaining agency. :any:`None` to use the default of the URL class.
+    agency_id: str | None = None
+
+    #: Version of the resource. :any:`None` for the latest.
+    version: str | None = None
+
+    #: Key for a data query, or :any:`None`.
+    key: str | None = None
+
+    #: Other parameters of the URL, including query parameters such as ``references``
+    #: and path parameters not listed above.
+    params: dict[str, Any] = field(default_factory=dict)
+
+    #: HTTP headers of the request. A source should add its defaults with
+    #: :meth:`~dict.setdefault`, so that headers from the caller are kept.
+    headers: CaseInsensitiveDict = field(default_factory=CaseInsensitiveDict)
+
+    #: A data structure definition for the response. It is given by the caller, or
+    #: retrieved to validate a key given as a :class:`dict`.
+    dsd: "sdmx.model.v21.DataStructureDefinition | None" = None
+
+    #: :any:`True` to request structure-specific data. This is the case if the caller
+    #: gives a DSD to a source that returns SDMX-ML. The ``Accept`` header is set
+    #: accordingly if the source or the caller has not set it.
+    structure_specific: bool = False
+
+    #: Arguments for a hook of the source that are not parameters of the URL; see
+    #: :attr:`sdmx.source.Source.hook_options`.
+    options: dict[str, Any] = field(default_factory=dict)
+
+    #: Start of the URL, before the path. This begins as :attr:`.Source.url`.
+    base_url: str = ""
 
 
 @dataclass
@@ -425,16 +477,18 @@ class URL(abc.ABC):
         self.handle_path_params("{agency_id}/{resource_id}/{version}")
         self.handle_query_params("detail_s references_s")
 
-    def join(self, *, with_query: bool = True) -> str:
+    def join(self, *, with_query: bool = True, base_url: str = "") -> str:
         """Join the URL parts, returning a complete URL.
 
         Parameters
         ----------
         with_query : bool
             If :any:`False`, omit :attr:`.query` from the joined URL.
+        base_url : str
+            Default: :attr:`.Source.url`.
         """
-        # Keep the URL scheme, netloc, and any path from the source's base URL
-        parts = list(urlsplit(self.source.url)[:3]) + [None, None]
+        # Keep the URL scheme, netloc, and any path from the base URL
+        parts = list(urlsplit(base_url or self.source.url)[:3]) + [None, None]
 
         # Assemble path string
         parts[2] = re.sub("([^/])$", r"\1/", parts[2] or "") + "/".join(

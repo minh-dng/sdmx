@@ -1,3 +1,4 @@
+from sdmx.rest.common import RequestSpec
 from sdmx.source import Source as BaseSource
 
 from .estat import handle_references_param
@@ -11,13 +12,11 @@ class Source(BaseSource):
 
     _id = "GROW"
 
-    def modify_request_args(self, kwargs):
-        """Modify arguments used to build query URL.
+    def modify_request(self, request: RequestSpec) -> None:
+        """Handle the ``references`` query parameter.
 
         See also
         --------
         :func:`.handle_references_param`, :issue:`162`
         """
-        super().modify_request_args(kwargs)
-
-        handle_references_param(kwargs)
+        handle_references_param(request)

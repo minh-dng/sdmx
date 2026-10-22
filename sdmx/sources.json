@@ -3,6 +3,11 @@
     "id": "ABS",
     "url": "https://data.api.abs.gov.au/rest",
     "name": "Australian Bureau of Statistics",
+    "headers": {
+      "*": {
+        "Accept": "application/xml"
+      }
+    },
     "supports": {
       "agencyscheme": false,
       "allowedconstraint": false,
@@ -158,6 +163,7 @@
   {
     "id": "ESTAT3",
     "url": "https://ec.europa.eu/eurostat/api/dissemination/sdmx/3.0",
+    "structure_agency": "ESTAT",
     "versions": [
       "3.0.0"
     ],
@@ -167,6 +173,7 @@
     "id": "ESTAT_COMEXT",
     "name": "Eurostat (Comext and Prodcom datasets)",
     "url": "https://ec.europa.eu/eurostat/api/comext/dissemination/sdmx/2.1",
+    "structure_agency": "ESTAT",
     "supports": {
       "actualconstraint": false,
       "allowedconstraint": false,
@@ -228,6 +235,7 @@
   {
     "id": "IMF_DATA",
     "url": "https://api.imf.org/external/sdmx/2.1",
+    "structure_agency": "all",
     "name": "International Monetary Fund",
     "supports": {
       "actualconstraint": false,
@@ -245,6 +253,12 @@
   {
     "id": "IMF_DATA3",
     "url": "https://api.imf.org/external/sdmx/3.0",
+    "structure_agency": "all",
+    "headers": {
+      "*": {
+        "Accept": "application/vnd.sdmx.data+xml; version=3.0.0, application/vnd.sdmx.metadata+xml; version=3.0.0, application/vnd.sdmx.structure+xml; version=3.0.0"
+      }
+    },
     "name": "International Monetary Fund (SDMX 3.0)",
     "supports": {
       "actualconstraint": false,
@@ -285,6 +299,7 @@
     "id": "INSEE",
     "name": "Institut national de la statistique et des études économiques (FR)",
     "url": "https://www.bdm.insee.fr/series/sdmx",
+    "structure_agency": "ALL",
     "headers": {
       "data": {
         "Accept": "application/vnd.sdmx.genericdata+xml;version=2.1"
@@ -305,6 +320,7 @@
     "id": "ISTAT",
     "name": "Instituto Nationale di Statistica (IT)",
     "url": "https://esploradati.istat.it/SDMXWS/rest",
+    "structure_agency": "all",
     "supports": {
       "agencyscheme": false,
       "dataconsumerscheme": false,
@@ -372,6 +388,7 @@
   {
     "id": "OECD",
     "url": "https://sdmx.oecd.org/public/rest",
+    "structure_agency": "ALL",
     "name": "Organisation for Economic Co-operation and Development",
     "supports": {
       "dataconsumerscheme": false,
@@ -386,6 +403,7 @@
   {
     "id": "OECD3",
     "url": "https://sdmx.oecd.org/public/rest/v2",
+    "structure_agency": "*",
     "name": "Organisation for Economic Co-operation and Development",
     "versions": [
       "3.0.0"
@@ -400,6 +418,7 @@
   {
     "id": "SGR",
     "url": "https://registry.sdmx.org/ws/public/sdmxapi/rest",
+    "structure_agency": "all",
     "name": "SDMX Global Registry",
     "supports": {
       "actualconstraint": false,
@@ -413,6 +432,7 @@
   {
     "id": "SGR3",
     "url": "https://registry.sdmx.org/sdmx/v2",
+    "structure_agency": "all",
     "name": "SDMX Global Registry",
     "supports": {
       "actualconstraint": false,
@@ -541,6 +561,7 @@
     "id": "WB",
     "name": "World Bank World Integrated Trade Solution",
     "url": "https://wits.worldbank.org/API/V1/SDMX/V21/rest",
+    "structure_agency": "WBG_WITS",
     "supports": {
       "actualconstraint": false,
       "agencyscheme": false,
@@ -557,6 +578,7 @@
     "id": "WB_WDI",
     "name": "World Bank World Development Indicators",
     "url": "https://api.worldbank.org/v2/sdmx/rest",
+    "structure_agency": "WB",
     "supports": {
       "actualconstraint": false,
       "agencyscheme": false,

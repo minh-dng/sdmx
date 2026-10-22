@@ -1,8 +1,7 @@
 import re
 
-from requests.structures import CaseInsensitiveDict
-
 from sdmx.rest import Resource
+from sdmx.rest.common import RequestSpec
 
 from . import DataContentType
 from . import Source as BaseSource
@@ -13,23 +12,24 @@ re_500 = re.compile(r"(An error has occurred)\.")
 class Source(BaseSource):
     _id = "ABS"
 
-    def modify_request_args(self, kwargs):
-        """Select the requested ABS data format; request metadata as SDMX-ML."""
-        resource_type = kwargs.get("resource_type")
-        data_format = kwargs.pop("format", self.data_content_type)
-        headers = CaseInsensitiveDict(kwargs.get("headers", {}))
-        kwargs["headers"] = headers
+    hook_options = frozenset({"format"})
 
-        if resource_type is Resource.data:
+    def modify_request(self, request: RequestSpec) -> None:
+        """Select the requested ABS data format.
+
+        The data format is the :py:`format=` argument to :meth:`.Client.get`, one of
+        :attr:`.DataContentType.JSON` or :attr:`.DataContentType.XML`. Default: the
+        :attr:`data_content_type` of the source. Metadata and XML data are
+        requested as SDMX-ML, via :attr:`headers`.
+        """
+        if request.resource_type is Resource.data:
+            data_format = request.options.get("format", self.data_content_type)
             if data_format is DataContentType.JSON:
-                headers.setdefault("Accept", "application/json")
+                request.headers.setdefault("Accept", "application/json")
             elif data_format is not DataContentType.XML:
                 raise ValueError("ABS format must be DataContentType.JSON or XML")
-
-        super().modify_request_args(kwargs)
-
-        if resource_type is not None:
-            headers.setdefault("Accept", "application/xml")
+            elif not request.structure_specific:
+                request.headers.setdefault("Accept", "application/xml")
 
     def handle_response(self, response, content):
         """Handle ABS' own text/html error page for some endpoints."""
