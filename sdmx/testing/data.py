@@ -60,7 +60,9 @@ def _rmtree(path: Path) -> None:
     """Remove `path`, including the read-only object files that Git creates."""
     for root, dirs, files in os.walk(path):
         for name in dirs + files:
-            os.chmod(os.path.join(root, name), stat.S_IRWXU)
+            # chmod() follows symbolic links, which may lead outside `path`
+            if not os.path.islink(entry := os.path.join(root, name)):
+                os.chmod(entry, stat.S_IRWXU)
     shutil.rmtree(path)
 
 

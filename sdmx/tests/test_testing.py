@@ -1,5 +1,5 @@
 import json
-import shutil
+import stat
 from pathlib import Path
 
 import git
@@ -262,6 +262,24 @@ def test_specimen_collection_fetch_core_worktree(
 
     assert (user / "specimen.xml").read_text() == "my edit"
     assert (checkout / "mine.txt").read_text() == "keep"
+
+
+def test_specimen_collection_fetch_keeps_mode_of_linked_file(
+    tmp_path, remote, checkout
+) -> None:
+    """Removing a damaged checkout does not change files that its links lead to."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("mine")
+    outside.chmod(0o640)
+    mode = stat.S_IMODE(outside.stat().st_mode)
+    data.SpecimenCollection(checkout, fetch=True)
+    (checkout / "link").symlink_to(outside)
+    data._rmtree(checkout / ".git" / "objects")
+
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert not (checkout / "link").exists()
+    assert stat.S_IMODE(outside.stat().st_mode) == mode
 
 
 def test_specimen_collection_fetch_custom_directory_filled_during_clone(
