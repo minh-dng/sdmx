@@ -242,18 +242,30 @@ class SpecimenCollection:
     def _inspect(self) -> "tuple[git.Repo, bool] | None":
         """Return the repository at :attr:`base_path` and whether it has changes.
 
-        Return :any:`None` if the repository is not usable: any failure to read it,
-        such as a missing commit or a truncated index, counts.
+        Return :any:`None` if the repository is damaged, such as with a missing commit
+        or a truncated index. Other errors, such as an unreadable index, are raised.
         """
         import git
 
         try:
             repo = git.Repo(self.base_path)
             repo.head.commit  # Raises ValueError if there are no commits
+            index = Path(repo.git_dir, "index")
             # Without an index, Git cannot tell which files are changed
-            dirty = not Path(repo.git_dir, "index").exists() or repo.is_dirty()
-            return repo, dirty
-        except Exception:
+            if not index.exists():
+                return repo, True
+            return repo, repo.is_dirty()
+        except (git.GitError, ValueError) as e:
+            # Git can report access errors as corruption; check before replacing files
+            def raise_os_error(error):
+                raise error
+
+            git_dir = self.base_path / ".git"
+            if git_dir.is_dir():
+                for root, _, files in os.walk(git_dir, onerror=raise_os_error):
+                    for name in files:
+                        Path(root, name).open("rb").close()
+            log.warning(f"Unusable repository in {self.base_path}: {e!r}")
             return None
 
     def _clone(self, managed: bool) -> None:

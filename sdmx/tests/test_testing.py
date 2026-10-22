@@ -1,5 +1,7 @@
 import json
+import os
 import stat
+import sys
 from pathlib import Path
 
 import git
@@ -327,3 +329,28 @@ def test_specimen_collection_fetch_custom_corrupt_index(tmp_path, remote) -> Non
         data.SpecimenCollection(custom, fetch=True)
 
     assert not (custom / "specimen.xml").exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0, reason="Cannot deny access"
+)
+@pytest.mark.parametrize("name", ["index", "objects", "refs/heads/main"])
+def test_specimen_collection_fetch_unreadable_repository(
+    remote, checkout, name
+) -> None:
+    """A healthy checkout that cannot be read is reported, not cloned again."""
+    data.SpecimenCollection(checkout, fetch=True)
+    blocked = checkout / ".git" / name
+    mode = stat.S_IMODE(blocked.stat().st_mode)
+    blocked.chmod(0)
+    (checkout / "mine.txt").write_text("keep")
+
+    try:
+        # PermissionError, or BrokenPipeError if Git exits before GitPython writes
+        with pytest.raises(OSError):
+            data.SpecimenCollection(checkout, fetch=True)
+    finally:
+        blocked.chmod(mode)
+
+    assert (checkout / ".git").exists()
+    assert (checkout / "mine.txt").read_text() == "keep"
