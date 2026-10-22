@@ -188,3 +188,18 @@ def test_specimen_collection_fetch_custom_repository_refresh(tmp_path, remote) -
 
     # A clean repository is otherwise used as is
     data.SpecimenCollection(custom, fetch=True)
+
+
+def test_specimen_collection_fetch_symlinked_default(
+    tmp_path, remote, checkout
+) -> None:
+    """A symbolic link at the default location leads to a directory sdmx does not own."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user, fetch=True)
+    (user / "specimen.xml").write_text("my edit")
+    checkout.symlink_to(user, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (user / "specimen.xml").read_text() == "my edit"

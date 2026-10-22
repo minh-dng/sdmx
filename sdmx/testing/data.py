@@ -187,14 +187,16 @@ class SpecimenCollection:
         - With `refresh`, whatever the state: fetch the latest ``main`` from
           :data:`REMOTE_URL` and check it out.
 
-        Any other path is the user's. It is cloned into only if missing or empty. If it
+        Any other path, including a symbolic link at :data:`DEFAULT_DIR`, is the user's.
+        It is cloned into only if missing or empty. If it
         is not a clean, usable checkout, or if `refresh` is given, sdmx changes nothing
         and raises :class:`FileExistsError` (not a usable checkout) or
         :class:`RuntimeError` (local changes, or `refresh`).
         """
         import git
 
-        managed = self.base_path == DEFAULT_DIR
+        # A symbolic link leads to a directory that may belong to the user
+        managed = self.base_path == DEFAULT_DIR and not DEFAULT_DIR.is_symlink()
         self.base_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Lock to avoid concurrency issues when running with pytest-xdist
