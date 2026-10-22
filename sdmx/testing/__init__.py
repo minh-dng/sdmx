@@ -1,19 +1,18 @@
 import logging
 import os
-import re
 from collections import ChainMap
 from collections.abc import Generator, Iterator
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 import pandas as pd
 import pytest
-import responses
-from filelock import FileLock
 from xdist import is_xdist_worker
 
+import sdmx
+from sdmx.client import Client
 from sdmx.exceptions import HTTPError
 from sdmx.format import Version
 from sdmx.rest import Resource
@@ -53,7 +52,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sdmx-fetch-data",
         action="store_true",
-        help="fetch test specimens from GitHub",
+        help="clone or repair the local copy of the test specimens, if needed",
+    )
+    parser.addoption(
+        "--sdmx-refresh-data",
+        action="store_true",
+        help="update the local copy of the test specimens from GitHub",
     )
     parser.addoption(
         "--sdmx-test-data",
@@ -93,6 +97,7 @@ def pytest_sessionstart(session: "pytest.Session") -> None:
         c.stash[KEY_DATA],
         # Fetch the test data if so configured, and not in an xdist worker process
         c.option.sdmx_fetch_data and not is_xdist_worker(session),
+        c.option.sdmx_refresh_data and not is_xdist_worker(session),
     )
 
     # Create a test source
@@ -134,26 +139,91 @@ XFAIL = {
 }
 
 
-def generate_endpoint_tests(metafunc):  # noqa: C901  TODO reduce complexity 11 → ≤10
+class DataSourceTest:
+    """Base class for tests of the endpoints of a data source.
+
+    A subclass names a :attr:`source_id` and may set the other attributes below.
+    :func:`generate_endpoint_tests` reads them, and generates one :meth:`test_endpoint`
+    for each :class:`.Resource` the source supports.
+    """
+
+    # TODO also test structure-specific data
+
+    #: Must be one of the IDs in sources.json.
+    source_id: ClassVar[str]
+
+    #: NB the following can be added to any subclass below for SSL failures. Update the
+    #:    docstring to describe the nature of the problem.
+    #: except skip SSL certificate verification
+    client_args: ClassVar[dict] = {}
+
+    #: Keyword arguments for particular endpoints.
+    endpoint_args: ClassVar[dict[str, dict[str, Any]]] = {}
+
+    #: True to xfail if a 503 Error is returned.
+    tolerate_503: ClassVar[bool] = False
+
+    #: Mapping of endpoint → Exception subclass. Tests of these endpoints are expected
+    #: to fail with the given kind of exception.
+    xfail: ClassVar[dict[str, type[Exception] | tuple[type[Exception], str]]] = {}
+
+    #: Failures affecting **all** data sources, internal to :mod:`sdmx`.
+    xfail_common: ClassVar[dict[str, Any]] = {}
+
+    @pytest.fixture(scope="class")
+    def client(self, session_with_pytest_cache: Session) -> Iterator[Client]:
+        """A Client that uses :func:`.session_with_pytest_cache`."""
+        yield Client(self.source_id, session=session_with_pytest_cache)
+
+    @pytest.fixture(scope="class")
+    def client_with_stored_responses(
+        self, session_with_stored_responses: Session
+    ) -> Iterator[Client]:
+        """A Client that uses :func:`.session_with_stored_responses`."""
+        yield Client(self.source_id, session=session_with_stored_responses)
+
+    @pytest.mark.source
+    @pytest.mark.network
+    def test_endpoint(self, pytestconfig, client, endpoint, args):
+        """Test all SDMX-REST endpoints for this data source.
+
+        See also
+        --------
+        generate_endpoint_tests
+        """
+        message = client.get(endpoint, **args)
+
+        if pytestconfig.getoption("verbose"):
+            print(repr(message))
+            if endpoint == "dataflow":
+                # Display the IDs of data flows; this can be used to identify targets
+                # for tests of the data endpoint for a particular source
+                for dfd in message.dataflow:
+                    print(repr(dfd))
+
+        # All parsed contents can also be converted to pandas
+        sdmx.to_pandas(message)
+
+
+def generate_endpoint_tests(metafunc):
     """pytest hook for parametrizing tests that need an "endpoint" fixture.
 
-    This function relies on the :class:`.DataSourceTest` base class defined in
-    :mod:`.test_sources`. It:
+    The test class must be a subclass of :class:`DataSourceTest`. This function:
 
-    - Generates one parametrization for every :class:`.Resource` (= REST API endpoint).
+    - Generates one parametrization for every :class:`.Resource` (= REST API endpoint),
+      except endpoints that need arguments but have none in
+      :attr:`.DataSourceTest.endpoint_args`, and endpoints that a SDMX-JSON source does
+      not support.
     - Applies pytest "xfail" (expected failure) marks according to:
 
       1. :attr:`.Source.supports`, i.e. if the particular source is marked as not
          supporting certain endpoints, the test is expected to fail.
       2. :attr:`.DataSourceTest.xfail`, any other failures defined on the source test
-         class (e.g. :class:`.DataSourceTest` subclass).
+         class.
       3. :attr:`.DataSourceTest.xfail_common`, common failures.
     """
     if "endpoint" not in metafunc.fixturenames:
         return  # Don't need to parametrize this metafunc
-
-    # Arguments to parametrize()
-    params = []
 
     # Use the test class' source_id attr to look up the Source class
     cls = metafunc.cls
@@ -166,40 +236,26 @@ def generate_endpoint_tests(metafunc):  # noqa: C901  TODO reduce complexity 11 
     # Merge subclass-specific and "common" xfail marks, preferring the former
     xfails = ChainMap(cls.xfail, cls.xfail_common)
 
-    # Iterate over all known endpoints
+    params = []
     for ep in Resource:
+        args = dict(cls.endpoint_args.get(ep.name, {}))
+        if ep is Resource.data and not args:
+            continue  # args must be specified for a data query; no args → no test
+
         # Accumulate multiple marks; first takes precedence
         marks = []
 
-        # Get any keyword arguments for this endpoint
-        args = cls.endpoint_args.get(ep.name, dict())
-        if ep is Resource.data and not len(args):
-            # args must be specified for a data query; no args → no test
-            continue
-
-        # Check if the associated source supports the endpoint
-        supported = source.supports[ep]
-        if source.data_content_type == DataContentType.JSON and ep is not Resource.data:
-            # SDMX-JSON sources only support data queries
-            continue
-        elif not supported:
+        if not source.supports[ep]:
+            if source.data_content_type is DataContentType.JSON:
+                continue  # Nothing to expect of a SDMX-JSON service
             args["force"] = True
             marks.append(XFAIL["unsupported"])
-
-        # Check if the test function's class contains an expected failure for `endpoint`
-        xfail = xfails.get(ep.name, None)
-        if not marks and xfail:
+        elif xfail := xfails.get(ep.name):
             # Mark the test as expected to fail
             try:  # Unpack a tuple
-                mark = pytest.mark.xfail(raises=xfail[0], reason=xfail[1])
+                marks.append(pytest.mark.xfail(raises=xfail[0], reason=xfail[1]))
             except TypeError:
-                mark = pytest.mark.xfail(raises=xfail)
-            marks.append(mark)
-
-            if not supported:  # pragma: no cover; for identifying extraneous entries
-                log.info(
-                    f"tests for {source.id!r} mention unsupported endpoint {ep.name!r}"
-                )
+                marks.append(pytest.mark.xfail(raises=xfail))
 
         # Tolerate 503 errors
         if cls.tolerate_503:
@@ -207,12 +263,9 @@ def generate_endpoint_tests(metafunc):  # noqa: C901  TODO reduce complexity 11 
 
         params.append(pytest.param(ep, args, id=ep.name, marks=marks))
 
-    if len(params):
+    if params:
         # Run the test function once for each endpoint
         metafunc.parametrize("endpoint, args", params)
-    # commented: for debugging
-    # else:
-    #     pytest.skip("No endpoints to be tested")
 
 
 class CompareTests:
@@ -259,49 +312,19 @@ class MessageTest:
 
 
 @pytest.fixture(scope="session")
-def installed_schemas(
-    worker_id: str,
-    mock_gh_api: responses.RequestsMock,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Iterator[Path]:
-    """Fixture that ensures schemas are installed locally in a temporary directory."""
-    import platformdirs
+def installed_schemas(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Fixture that ensures schemas are installed locally in a temporary directory.
 
+    Workers sharing the user cache need no coordination: :func:`.ensure_schemas` locks
+    and publishes each cache entry atomically.
+    """
     from sdmx.format.xml.common import install_schemas
 
     dir = tmp_path_factory.mktemp("schemas")
-
-    # Keep installation serialized across workers sharing the user cache.
-    lock = platformdirs.user_cache_path("sdmx", ensure_exists=True) / "schemas.lock"
-    with mock_gh_api, FileLock(lock):
-        install_schemas(dir.joinpath("2.1"), Version["2.1"])
-        install_schemas(dir.joinpath("3.0.0"), Version["3.0.0"])
+    install_schemas(dir.joinpath("2.1"), Version["2.1"])
+    install_schemas(dir.joinpath("3.0.0"), Version["3.0.0"])
 
     yield dir
-
-
-@pytest.fixture(scope="session")
-def mock_gh_api() -> Iterator[responses.RequestsMock]:
-    """Mock GitHub API responses to avoid hitting rate limits.
-
-    For each API endpoint URL queried by :func:.`_gh_zipball`, return a pared-down JSON
-    response that contains the required "zipball_url" key.
-    """
-    base = "https://api.github.com/repos/sdmx-twg/sdmx-ml"
-
-    # TODO Improve .util.requests to provide (roughly) the same functionality, then drop
-    # use of responses here
-    mock = responses.RequestsMock(assert_all_requests_are_fired=False)
-    mock.add_passthru(re.compile(rf"{base}/zipball/\w+"))
-    mock.add_passthru(re.compile(r"https://codeload.github.com/\w+"))
-
-    for v in "2.1", "3.0", "3.0.0":
-        mock.get(
-            url=f"{base}/releases/tags/v{v}",
-            json=dict(zipball_url=f"{base}/zipball/v{v}"),
-        )
-
-    yield mock
 
 
 @pytest.fixture(scope="session")

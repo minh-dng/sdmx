@@ -4,13 +4,16 @@ from typing import IO, TYPE_CHECKING, Any, Literal, overload
 from warnings import warn
 
 import requests
+from requests.structures import CaseInsensitiveDict
 
+from sdmx.format import Version
 from sdmx.model import common
 from sdmx.model.v21 import DataStructureDefinition
-from sdmx.reader import get_reader
+from sdmx.reader import get_first_reader
 from sdmx.rest import Resource
+from sdmx.rest.common import RequestSpec
 from sdmx.session import DEFAULT_TIMEOUT, ResponseIO, Session
-from sdmx.source import NoSource, get_source, list_sources
+from sdmx.source import DataContentType, NoSource, get_source, list_sources
 
 from . import message
 
@@ -22,6 +25,9 @@ if TYPE_CHECKING:
     import sdmx.source
 
 log = logging.getLogger(__name__)
+
+#: Value of the ``Accept`` header to request structure-specific data.
+STRUCTURE_SPECIFIC_DATA = "application/vnd.sdmx.structurespecificdata+xml;version=2.1"
 
 
 def Request(*args, **kwargs) -> "Client":
@@ -197,59 +203,91 @@ class Client:
 
         return cc.to_query_string(dsd), dsd
 
-    def _request_from_args(self, kwargs) -> "requests.Request":
-        """Validate arguments and prepare pieces for a request."""
-        headers = kwargs.pop("headers", {})
-
-        # Resource arguments
+    def _request_spec(self, kwargs, options) -> RequestSpec:
+        """Describe the query for the arguments of :meth:`get`."""
         resource_type = kwargs.pop("resource_type", None)
         resource_id = kwargs.pop("resource_id", None)
-
-        # Assemble keyword arguments for URL
-        kw = dict(
-            source=self.source,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            params=kwargs.pop("params", {}),
-        )
-        if provider := kwargs.pop("provider", None):  # pragma: no cover
-            warn("provider= keyword argument; use agency_id", DeprecationWarning, 3)
-            kw.update(agency_id=provider)
-        if version := kwargs.pop("version", None):
-            kw.update(version=version)
-
         key = kwargs.pop("key", None)
         dsd = kwargs.pop("dsd", None)
-
-        # Pass remaining `kwargs` to URL to either handle or raise
-        kw.update(kwargs)
-        kwargs.clear()
+        structure_specific = (
+            isinstance(dsd, DataStructureDefinition)
+            and self.source.data_content_type is DataContentType.XML
+        )
 
         if isinstance(key, dict):
             # Make the key, and retain the DSD (if any) for use in parsing
             key, dsd = self._make_key(resource_type, resource_id, key, dsd)
-            kwargs["dsd"] = dsd
         elif not (key is None or isinstance(key, str)):
             raise TypeError(f"key must be str or dict; got {key.__class__.__name__}")
 
-        if key is not None:
-            kw.update(key=key)
+        params = dict(kwargs.pop("params", None) or {})
+        headers = CaseInsensitiveDict(kwargs.pop("headers", None) or {})
+        agency_id = kwargs.pop("agency_id", None)
+        version = kwargs.pop("version", None)
 
-        # Headers: use headers from source config if not given by the caller
-        if not headers:
-            try:
-                headers.update(self.source.headers.get(resource_type.name, {}))
-            except AttributeError:
-                pass
+        # Other arguments are parameters of the URL, which will raise if it cannot
+        # handle them
+        if overlap := set(kwargs) & set(params):
+            raise ValueError(f"Duplicate values for query parameters {overlap}")
+        params.update(kwargs)
 
-        # Identify the URL class; handle the `kw`
+        return RequestSpec(
+            resource_type,
+            resource_id,
+            agency_id,
+            version,
+            key,
+            params,
+            headers,
+            dsd,
+            structure_specific,
+            options,
+            self.source.url,
+        )
+
+    def _request_from_spec(self, request: RequestSpec) -> "requests.Request":
+        """Complete `request` with defaults of the source and prepare a request."""
+        assert request.resource_type is not None
+        rt = request.resource_type
+        # SDMX-REST 2.1 data and availability URLs have no agency; 3.0.0 ones do
+        in_url = rt not in (Resource.data, Resource.availableconstraint) or (
+            Version["2.1"] not in self.source.versions
+        )
+        if request.agency_id is None and in_url:
+            request.agency_id = self.source.default_agency
+
+        if request.structure_specific:
+            request.headers.setdefault("Accept", STRUCTURE_SPECIFIC_DATA)
+
+        # Headers of the source: for all resource types ("*"), and for this one
+        defaults = {
+            **self.source.headers.get("*", {}),
+            **self.source.headers.get(rt.name, {}),
+        }
+        for name, value in defaults.items():
+            request.headers.setdefault(name, value)
+
+        # Identify the URL class; handle the `request`
         # TODO specify API version for sources that support multiple API versions at the
         #      same URL
-        url = self.source.get_url_class()(**kw)
+        url = self.source.get_url_class()(
+            self.source,
+            rt,
+            resource_id=request.resource_id,
+            **{
+                name: value
+                for name in ("agency_id", "version", "key")
+                if (value := getattr(request, name)) is not None
+            },
+            params=request.params,
+        )
 
         # Allow requests to keep track of the query parameters and rest of the URL
         return requests.Request(
-            "get", url.join(with_query=False), params=url.query, headers=headers
+            "get",
+            url.join(with_query=False, base_url=request.base_url),
+            params=url.query,
+            headers=request.headers,
         )
 
     def _request_from_url(self, kwargs) -> "requests.Request":
@@ -265,6 +303,9 @@ class Client:
         return requests.Request("get", url, params=parameters, headers=headers)
 
     def _handle_get_kwargs(self, kwargs) -> tuple[dict, dict]:  # noqa: C901 TODO reduce complexity 12 → ≤10
+        if "provider" in kwargs:
+            raise TypeError("provider= was removed in 3.0.0; use agency_id=")
+
         if kwargs.pop("validate", None) is not None:
             warn("validate= keyword argument to Client.get()", DeprecationWarning)
 
@@ -302,12 +343,6 @@ class Client:
                 f"{self.source.id} does not implement or support the "
                 f"{resource_type!r} API endpoint. Use force=True to override"
             )
-
-        # Allow Source class to modify request args
-        # TODO this should occur after most processing, defaults, checking etc. are
-        #      performed, so that core code does most of the work.
-        if self.source:
-            self.source.modify_request_args(kwargs)
 
         def _collect(*keywords) -> dict[str, Any]:
             return {kw: kwargs.pop(kw) for kw in keywords if kw in kwargs}
@@ -418,6 +453,17 @@ class Client:
 
         Other Parameters
         ----------------
+        agency_id : str
+            ID of the agency that maintains the resource. Default: the
+            :attr:`~.Source.default_agency` of the :attr:`source`, or otherwise the ID
+            of the :attr:`source`. SDMX-REST 2.1 data and availability URLs have no
+            agency.
+
+            An SDMX web service is a ‘data source’ operated by a specific, ‘source’
+            agency. A web service may host data or metadata originally published by one
+            or more ‘provider’ agencies. Many sources are also providers. Other
+            agencies—e.g. the SDMX Global Registry—simply aggregate (meta)data from
+            other providers, but do not provide any (meta)data themselves.
         allow_redirects : bool
             If :obj:`False`, do not follow HTTP redirects for the current request.
             Default: :obj:`True`, as for :meth:`requests.Session.send`.
@@ -428,9 +474,8 @@ class Client:
             If :obj:`True`, execute the query even if the :attr:`source` does not
             support queries for the given `resource_type`. Default: :obj:`False`.
         headers : dict
-            HTTP headers. Given headers will overwrite instance-wide headers passed to
-            the constructor. Default: :obj:`None` to use the default headers of the
-            :attr:`source`.
+            HTTP headers. Each given header replaces the header of the same name that the
+            :attr:`source` would use by default.
         key : str or dict
             For queries with `resource_type='data'`. :class:`str` values are not
             validated; :class:`dict` values are validated using
@@ -440,15 +485,6 @@ class Client:
             github.com/sdmx-twg/sdmx-rest/tree/master/v2_1/ws/rest/docs>`_
             describe parameters and allowable values for different queries. `params` is
             not validated before the query is executed.
-        provider : str
-            ID of the agency providing the data or metadata. Default: ID of the
-            :attr:`source` agency.
-
-            An SDMX web service is a ‘data source’ operated by a specific, ‘source’
-            agency. A web service may host data or metadata originally published by one
-            or more ‘provider’ agencies. Many sources are also providers. Other
-            agencies—e.g. the SDMX Global Registry—simply aggregate (meta)data from
-            other providers, but do not provide any (meta)data themselves.
         resource : :class:`~.MaintainableArtefact` subclass
             Object to retrieve. If given, `resource_type` and `resource_id` are ignored.
         timeout : float
@@ -477,11 +513,17 @@ class Client:
 
         kwargs, send_kwargs = self._handle_get_kwargs(kwargs)
 
+        # Arguments for hooks of the source are not parameters of the URL
+        options = {k: kwargs.pop(k) for k in self.source.hook_options if k in kwargs}
+
         # Handle arguments
         if "url" in kwargs:
+            request = RequestSpec(None, options=options)
             req = self._request_from_url(kwargs)
         else:
-            req = self._request_from_args(kwargs)
+            request = self._request_spec(kwargs, options)
+            self.source.modify_request(request)
+            req = self._request_from_spec(request)
 
         req_prepared = self.session.prepare_request(req)
         if dry_run:
@@ -527,9 +569,9 @@ class Client:
             response, response_content
         )
 
-        # Select reader class
+        # Select reader class: by the content-type header, then by the content
         try:
-            Reader = get_reader(response)
+            Reader = get_first_reader((response, response_content))
         except ValueError:
             raise ValueError(
                 "can't determine a reader for response content type "
@@ -540,13 +582,13 @@ class Client:
         reader = Reader()
 
         # Parse the message, using any provided or auto-queried DSD
-        msg = reader.convert(response_content, structure=kwargs.get("dsd", None))
+        msg = reader.convert(response_content, structure=request.dsd)
 
         # Store the HTTP response with the message
         msg.response = response
 
         # Call the finish_message() hook
-        msg = self.source.finish_message(msg, self, **kwargs)
+        msg = self.source.finish_message(msg, self, request)
 
         # store in memory cache if needed
         if use_cache and req_prepared.url:

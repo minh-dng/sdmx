@@ -4,7 +4,6 @@ from sdmx import Client, Resource
 from sdmx.model import v21 as model
 from sdmx.source import (
     DataContentType,
-    Source,
     add_source,
     get_source,
     list_sources,
@@ -180,6 +179,8 @@ def test_add_source():
         }"""
     add_source(profile2)
     assert not sources["BAR"].supports["datastructure"]
+    assert not sources["BAR"].supports["metadata"]
+    assert sources["BAR"].supports["data"]
 
     with pytest.raises(
         ValueError, match="Data source 'ECB' already defined; use override=True"
@@ -187,20 +188,105 @@ def test_add_source():
         add_source(dict(id="ECB", name="Demo source", url="https://example.com/sdmx"))
 
 
-class TestSource:
-    @pytest.fixture
-    def s(self):
-        """An instance of the class."""
-        yield Source(id="FOO", name="Test source", url="https://example.com")
+GENERIC = "application/vnd.sdmx.genericdata+xml;version=2.1"
+SS = "application/vnd.sdmx.structurespecificdata+xml;version=2.1"
+IMF3 = ", ".join(
+    f"application/vnd.sdmx.{x}+xml; version=3.0.0"
+    for x in ("data", "metadata", "structure")
+)
+DSD = model.DataStructureDefinition()
 
+#: (source ID, args to Client.get, kwargs to Client.get, URL after Source.url, Accept)
+REQUESTS = [
+    # Default agency, from Source.default_agency
+    ("INSEE", ("codelist", "CL"), {}, "/codelist/ALL/CL/latest", "*/*"),
+    ("ISTAT", ("dataflow",), {}, "/dataflow/all/all/latest", "*/*"),
+    ("OECD", ("dataflow",), {}, "/dataflow/ALL/all/latest", "*/*"),
+    ("OECD3", ("dataflow",), {}, "/structure/dataflow/*/*/+", "*/*"),
+    ("SGR", ("dataflow",), {}, "/dataflow/all/all/latest", "*/*"),
+    ("WB", ("dataflow",), {}, "/dataflow/WBG_WITS/all/latest", "*/*"),
+    ("ESTAT_COMEXT", ("codelist", "CL"), {}, "/codelist/ESTAT/CL/latest", "*/*"),
+    ("ESTAT3", ("codelist", "CL"), {}, "/structure/codelist/ESTAT/CL/+", "*/*"),
+    # …for SDMX-REST 3.0.0 data queries, with or without a key
+    ("OECD3", ("data", "DF"), {}, "/data/*/*/DF/+", "*/*"),
+    ("ESTAT3", ("data", "DF"), {}, "/data/*/ESTAT/DF/+", "*/*"),
+    ("ESTAT3", ("data", "DF"), dict(key="A.B"), "/data/*/ESTAT/DF/+/A.B", "*/*"),
+    ("ESTAT3", ("data", "DF"), dict(version="1.0"), "/data/*/ESTAT/DF/1.0", "*/*"),
+    ("SGR3", ("data", "DF"), dict(key="A"), "/data/*/all/DF/+/A", "*/*"),
+    ("IMF_DATA3", ("data", "DF"), {}, "/data/*/all/DF/+", IMF3),
+    # …but not for SDMX-REST 2.1 data queries, which have no agency
+    ("OECD", ("data", "DF"), {}, "/data/DF", "*/*"),
+    # …and the caller's agency_id is kept
+    ("INSEE", ("codelist", "CL"), dict(agency_id="X"), "/codelist/X/CL/latest", "*/*"),
+    # Default headers by resource type, from Source.headers
+    ("ILO", ("data", "DF"), dict(key="A.B"), "/data/DF/A.B", SS),
+    ("ILO", ("dataflow", "DF"), {}, "/dataflow/ILO/DF/latest?references=all", "*/*"),
+    ("IMF_DATA3", ("dataflow", "DF"), {}, "/structure/dataflow/all/DF/+", IMF3),
+    # The caller's headers replace one default each
+    ("ILO", ("data", "DF"), dict(key="A.B", headers={"accept": "text/plain"}), "/data/DF/A.B", "text/plain"),
+    ("INSEE", ("data", "DF"), dict(key="A.B", headers={"X-Foo": "1"}), "/data/DF/A.B", GENERIC),
+    # A DSD asks for structure-specific data
+    ("INSEE", ("data", "DF"), dict(key="A.B", dsd=DSD), "/data/DF/A.B", SS),
+    # ABS: format is for the hook; metadata and XML data are requested as XML
+    ("ABS", ("dataflow", "DF"), {}, "/dataflow/ABS/DF/latest?references=all", "application/xml"),
+    ("ABS", ("data", "DF"), dict(key="A.B", format=DataContentType.JSON), "/data/DF/A.B", "application/json"),
+    ("ABS", ("data", "DF"), dict(key="A.B", format=DataContentType.JSON, dsd=DSD), "/data/DF/A.B", "application/json"),
+    ("ABS", ("data", "DF"), dict(key="A.B", dsd=DSD), "/data/DF/A.B", SS),
+    ("ABS_JSON", ("data", "DF"), dict(key="A.B", format=DataContentType.XML), "/data/DF/A.B", "application/xml"),
+    # BBK: structure queries use another base URL, and have no version
+    ("BBK", ("codelist", "CL"), {}, "/metadata/codelist/BBK/CL/latest", "*/*"),
+    ("BBK", ("dataflow", "DF"), dict(version="1.0"), "/metadata/dataflow/BBK/DF/latest?references=all", "*/*"),
+    ("BBK", ("data", "DF"), dict(key="A.B"), "/data/DF/A.B", "*/*"),
+    # ESTAT: get_footer_url is for the hook; references are limited to what is supported
+    ("ESTAT", ("data", "DF"), dict(key="A.B", get_footer_url=(1, 1)), "/data/DF/A.B", "*/*"),
+    ("ESTAT", ("dataflow", "DF"), {}, "/dataflow/ESTAT/DF/latest?references=descendants", "*/*"),
+    ("ESTAT", ("datastructure", "DS"), dict(references="parents"), "/datastructure/ESTAT/DS/latest?references=none", "*/*"),
+    ("COMP", ("dataflow", "DF"), dict(params=dict(references="all")), "/dataflow/COMP/DF/latest?references=none", "*/*"),
+    ("EMPL", ("categoryscheme",), {}, "/categoryscheme/EMPL/all/latest?references=descendants", "*/*"),
+    ("GROW", ("datastructure", "DS"), {}, "/datastructure/GROW/DS/latest?references=descendants", "*/*"),
+    # WB_WDI: trailing slash for data; its own agency for category schemes
+    ("WB_WDI", ("data", "DF"), dict(key="A.B"), "/data/DF/A.B/", "*/*"),
+    ("WB_WDI", ("categoryscheme",), dict(force=True), "/categoryscheme/all/all/latest?references=parentsandsiblings", "*/*"),
+    ("WB_WDI", ("datastructure", "DS"), dict(force=True), "/datastructure/WB/DS/latest?references=all", "*/*"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "source_id, args, kwargs, path, accept",
+    [pytest.param(*r, id="-".join([r[0], *r[1]])) for r in REQUESTS],
+)
+def test_request(recwarn, source_id, args, kwargs, path, accept) -> None:
+    """The Source and Client together give the expected URL and headers."""
+    request = Client(source_id).get(*args, dry_run=True, **kwargs)  # type: ignore [call-overload]
+
+    assert sources[source_id].url + path == request.url
+    assert accept == request.headers["Accept"]
+    for name, value in kwargs.get("headers", {}).items():
+        assert value == request.headers[name]
+
+    # No source uses a deprecated feature of Client.get()
+    assert [] == [w for w in recwarn if w.category is DeprecationWarning]
+
+
+def test_hook_options_not_url_parameters() -> None:
+    """Arguments for a hook are not accepted by sources that do not have the hook."""
+    with pytest.raises(ValueError, match="Unexpected/unhandled parameters"):
+        Client("ECB").data("DF", key="A.B", get_footer_url=(1, 1), dry_run=True)
+
+
+def test_shared_source_not_modified() -> None:
+    """Queries do not change the Source, which is shared by all its Clients."""
+    source = sources["BBK"]
+    before = source.url
+
+    Client("BBK").codelist("CL", dry_run=True)
+
+    assert before == source.url == Client("BBK").source.url
+
+
+class TestSource:
     def test_get_url_class(self):
         """get_url_class() returns :class:`.v30.URL` as appropriate."""
         from sdmx.rest import v30
 
         assert issubclass(sources["ESTAT3"].get_url_class(), v30.URL)
-
-    def test_modify_request_args(self, s):
-        kwargs = dict(dsd=model.DataStructureDefinition())
-
-        s.modify_request_args(kwargs)
-        assert "structurespecificdata" in kwargs["headers"]["Accept"]

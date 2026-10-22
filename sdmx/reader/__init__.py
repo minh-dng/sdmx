@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from warnings import warn
@@ -85,6 +86,32 @@ def get_reader(
     return _get(data, kwargs, READERS)
 
 
+def get_first_reader(
+    candidates: Iterable[Any], kwargs: dict | None = None
+) -> type["sdmx.reader.base.BaseReader"]:
+    """Identify a :class:`.Reader` for the first of `candidates` that any reader handles.
+
+    The `candidates` are different views of the same input, in order of preference. For
+    example, :func:`read_sdmx` tries a file path, then the content of the file. When
+    :meth:`.Client.get` receives a response, it tries the response (headers), then its
+    content: a ``content-type`` that names an SDMX format is trusted; otherwise, the
+    content is inspected.
+
+    Raises
+    ------
+    ValueError
+        if no reader handles any of the `candidates`.
+    """
+    candidates = list(candidates)
+    for candidate in candidates:
+        try:
+            return get_reader(candidate, kwargs)
+        except ValueError:
+            continue
+
+    raise ValueError(f"no reader recognizes any of {candidates!r}")
+
+
 def get_reader_for_media_type(value) -> type["sdmx.reader.base.BaseReader"]:
     """Return a reader class for HTTP content/media type `value`.
 
@@ -168,19 +195,15 @@ def read_sdmx(
         path, obj = None, filename_or_obj
 
     # Try to identify a reader by first the path, then by the `obj` content
-    for candidate in path, obj, Path(f"_.{(format or 'MISSING').lower()}"):
-        try:
-            reader = get_reader(candidate, kwargs)
-        except ValueError:
-            reader = None
-        else:
-            break
-
-    if not reader:
+    try:
+        reader = get_first_reader(
+            (path, obj, Path(f"_.{(format or 'MISSING').lower()}")), kwargs
+        )
+    except ValueError:
         raise RuntimeError(
             f"cannot infer SDMX message format from path {path!r}, format "
             f"hint={format}, or content"
-        )
+        ) from None
 
     return reader().convert(obj, **kwargs)
 

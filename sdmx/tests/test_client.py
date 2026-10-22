@@ -30,6 +30,22 @@ def test_deprecated_request(caplog) -> None:
     assert caplog.record_tuples == [("sdmx.client", logging.WARNING, message)]
 
 
+@pytest.mark.parametrize("source", ["ECB", "ESTAT3"])
+@pytest.mark.parametrize("provider", ["ECB", None])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(resource_type="data", resource_id="FLOW"),
+        dict(url="https://example.com/sdmx"),
+    ],
+    ids=["resource", "url"],
+)
+def test_provider_rejected(source, provider, kwargs) -> None:
+    """`provider` is rejected for both resource and complete-URL requests."""
+    with pytest.raises(TypeError, match="use agency_id"):
+        sdmx.Client(source).get(provider=provider, dry_run=True, **kwargs)
+
+
 def test_read_sdmx(tmp_path: "Path", specimen: "SpecimenCollection") -> None:
     # Copy the file to a temporary file with an urecognizable suffix
     target = tmp_path / "foo.badsuffix"
@@ -352,3 +368,74 @@ def test_read_url1() -> None:
         ValueError, match=r"{'foo': 'bar'} supplied with get\(url=...\)"
     ):
         sdmx.read_url("https://example.com", foo="bar")
+
+
+@pytest.fixture
+def stored_xml_client():
+    """A Client whose session returns a stored SDMX-ML message with the given headers."""
+
+    def _make(headers: dict[str, str], prefix: bytes = b"") -> "Client":
+        client = sdmx.Client("ECB", backend="memory")
+        save_response(
+            client.session,
+            "GET",
+            "https://example.com/structure",
+            prefix + sdmx.to_xml(sdmx.message.StructureMessage()),
+            headers,
+        )
+        return client
+
+    return _make
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},  # Missing; SGR
+        {"Content-Type": "application/force-download"},  # LSD
+        {"Content-Type": "text/plain"},
+        {"Content-Type": "application/octet-stream"},
+    ],
+)
+def test_get_reader_from_content(stored_xml_client, headers) -> None:
+    """Without an SDMX content-type, the reader is chosen by the content."""
+    client = stored_xml_client(headers)
+
+    msg = client.get(url="https://example.com/structure")
+
+    assert isinstance(msg, sdmx.message.StructureMessage)
+
+
+@pytest.mark.parametrize(
+    "headers", [{}, {"Content-Type": "application/force-download"}]
+)
+def test_get_reader_from_content_bom(stored_xml_client, headers) -> None:
+    """A UTF-8 byte order mark before the content does not hide the format."""
+    client = stored_xml_client(headers, b"\xef\xbb\xbf")
+
+    msg = client.get(url="https://example.com/structure")
+
+    assert isinstance(msg, sdmx.message.StructureMessage)
+
+
+def test_get_reader_from_header(stored_xml_client) -> None:
+    """A content-type that names an SDMX format is trusted over the content."""
+    client = stored_xml_client({"Content-Type": "application/vnd.sdmx.data+json"})
+
+    with pytest.raises(json.JSONDecodeError):
+        client.get(url="https://example.com/structure")
+
+
+def test_get_reader_unknown() -> None:
+    """If neither header nor content is recognized, the error mentions the header."""
+    client = sdmx.Client("ECB", backend="memory")
+    save_response(
+        client.session,
+        "GET",
+        "https://example.com/other",
+        b"not SDMX",
+        {"Content-Type": "text/plain"},
+    )
+
+    with pytest.raises(ValueError, match="reader for response content type 'text/pla"):
+        client.get(url="https://example.com/other")

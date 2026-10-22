@@ -1,6 +1,10 @@
 """Code for working with :file:`sdmx-test-data`."""
 
 import logging
+import os
+import shutil
+import stat
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -9,6 +13,7 @@ import platformdirs
 import pytest
 
 if TYPE_CHECKING:
+    import git
     import pandas
     from _pytest.mark.structures import ParameterSet
 
@@ -51,6 +56,16 @@ REMOTE_URL = "https://github.com/khaeru/sdmx-test-data.git"
 # REMOTE_URL = "git@github.com:khaeru/sdmx-test-data.git"
 
 
+def _rmtree(path: Path) -> None:
+    """Remove `path`, including the read-only object files that Git creates."""
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            # chmod() follows symbolic links, which may lead outside `path`
+            if not os.path.islink(entry := os.path.join(root, name)):
+                os.chmod(entry, stat.S_IRWXU)
+    shutil.rmtree(path)
+
+
 class SpecimenCollection:
     """Collection of test specimens.
 
@@ -59,7 +74,9 @@ class SpecimenCollection:
     path :
        Path containing :file:`sdmx-test-data`, or to which to clone the repository.
     fetch :
-       If :any:`True`, call :meth:`fetch`
+       If :any:`True`, call :meth:`fetch`.
+    refresh :
+       Passed to :meth:`fetch`.
     """
 
     #: Base path containing the specimen collection.
@@ -72,11 +89,11 @@ class SpecimenCollection:
     #: 3. Message type: either "data", "structure", or None.
     specimens: list[tuple[Path, str, str | None]]
 
-    def __init__(self, path: Path, fetch: bool):
+    def __init__(self, path: Path, fetch: bool, refresh: bool = False):
         self.base_path = path
 
-        if fetch:
-            self.fetch()
+        if fetch or refresh:
+            self.fetch(refresh)
 
         # Check the base directory exists
         if not self.base_path.exists():  # pragma: no cover
@@ -158,49 +175,140 @@ class SpecimenCollection:
 
         return result
 
-    def fetch(self) -> None:
-        """Fetch test data from GitHub."""
+    def fetch(self, refresh: bool = False) -> None:
+        """Make :attr:`base_path` a usable checkout of sdmx-test-data.
+
+        sdmx manages only the default location, :data:`DEFAULT_DIR`. There, the checkout
+        is in one of four states, each handled without help from the caller:
+
+        - Missing, or a Git repository too damaged to use: clone it. The old directory
+          is removed only after the new clone is complete.
+        - Clean: leave it alone. No network access occurs.
+        - Files deleted or modified: restore them from the local repository. No network
+          access occurs.
+        - With `refresh`, whatever the state: fetch the latest ``main`` from
+          :data:`REMOTE_URL` and check it out.
+
+        Any other path is the user's. So is :data:`DEFAULT_DIR` if a symbolic link
+        leads to it or to its checkout: a link in its path, a ``.git`` that is a link or
+        file, or a ``core.worktree`` setting. Such a path is cloned into only if missing
+        or empty. If it is not a clean, usable checkout, or if `refresh` is given, sdmx
+        changes nothing and raises :class:`FileExistsError` (not a usable checkout) or
+        :class:`RuntimeError` (local changes, or `refresh`).
+        """
         import git
 
-        # Create a lock to avoid concurrency issues when running with pytest-xdist
-        self.base_path.mkdir(parents=True, exist_ok=True)
-        blf = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
-        blf._obtain_lock()
+        # Symbolic links lead to files that may belong to the user
+        git_dir = self.base_path.joinpath(".git")
+        managed = (
+            self.base_path == DEFAULT_DIR
+            and DEFAULT_DIR.resolve() == DEFAULT_DIR.absolute()
+            and not (git_dir.is_symlink() or git_dir.is_file())
+        )
+        self.base_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Lock to avoid concurrency issues when running with pytest-xdist
+        lock = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
+        lock._obtain_lock()
+        try:
+            if managed:
+                with git.GitConfigParser(
+                    [git_dir / "config", git_dir / "config.worktree"], read_only=True
+                ) as config:
+                    managed = not config.has_option("core", "worktree")
+            if not (inspected := self._inspect()):
+                self._clone(managed)
+                return
+
+            repo, dirty = inspected
+            with repo:
+                if not managed and (dirty or refresh):
+                    raise RuntimeError(
+                        f"{self.base_path} is not managed by sdmx and "
+                        + ("has local changes" if dirty else "cannot be refreshed")
+                        + ". Restore it yourself (for instance 'git reset --hard'), or "
+                        f"use the default location {DEFAULT_DIR}"
+                    )
+                if refresh:
+                    log.info(f"Fetch test data from {REMOTE_URL}")
+                    repo.remotes["origin"].fetch("refs/heads/main", depth=1)
+                    repo.git.reset("--hard", "FETCH_HEAD")
+                elif dirty:
+                    log.info(f"Restore files in {self.base_path}")
+                    repo.git.reset("--hard", "HEAD")
+        finally:
+            lock._release_lock()
+
+    def _inspect(self) -> "tuple[git.Repo, bool] | None":
+        """Return the repository at :attr:`base_path` and whether it has changes.
+
+        Return :any:`None` if the repository is damaged, such as with a missing commit
+        or a truncated index. Other errors, such as an unreadable index, are raised.
+        """
+        import git
 
         try:
-            # Close GitPython's cached processes after fetching; on Windows, open Git
-            # handles otherwise prevent removing an incomplete CI checkout.
-            with git.Repo.init(self.base_path) as repo:
+            repo = git.Repo(self.base_path)
+            repo.head.commit  # Raises ValueError if there are no commits
+            index = Path(repo.git_dir, "index")
+            # Without an index, Git cannot tell which files are changed
+            if not index.exists():
+                return repo, True
+            return repo, repo.is_dirty()
+        except (git.GitError, ValueError) as e:
+            # Git can report access errors as corruption; check before replacing files
+            def raise_os_error(error):
+                raise error
+
+            git_dir = self.base_path / ".git"
+            if git_dir.is_dir():
+                for root, _, files in os.walk(git_dir, onerror=raise_os_error):
+                    for name in files:
+                        Path(root, name).open("rb").close()
+            log.warning(f"Unusable repository in {self.base_path}: {e!r}")
+            return None
+
+    def _clone(self, managed: bool) -> None:
+        """Replace :attr:`base_path` with a new shallow clone of :data:`REMOTE_URL`.
+
+        The clone is made next to :attr:`base_path` and moved into place only when
+        complete, so a failure leaves :attr:`base_path` as it was.
+        """
+        import git
+
+        path = self.base_path
+        in_use = FileExistsError(
+            f"{path} exists but is not a usable sdmx-test-data checkout. sdmx does "
+            "not change directories it does not manage. Repair the repository, "
+            "empty or remove the directory, or point --sdmx-test-data / "
+            "SDMX_TEST_DATA elsewhere"
+        )
+        if not managed and path.exists() and any(path.iterdir()):
+            raise in_use
+
+        log.info(f"Clone test data from {REMOTE_URL} → {path}")
+        staging = Path(tempfile.mkdtemp(prefix=f"{path.name}.", dir=path.parent))
+        new, old = staging / "checkout", staging / "previous"
+        try:
+            git.Repo.clone_from(REMOTE_URL, new, depth=1, branch="main").close()
+            if managed:
+                if path.exists():
+                    path.rename(old)
+            else:
                 try:
-                    # Reference to existing 'origin' remote
-                    origin = repo.remotes["origin"]
-                    # Ensure the REMOTE_URL is among the URLs for this remote
-                    if REMOTE_URL not in origin.urls:  # pragma: no cover
-                        origin.set_url(REMOTE_URL)
-                except IndexError:
-                    # Create a new remote
-                    origin = repo.create_remote("origin", REMOTE_URL)
-
-                log.info(f"Fetch test data from {origin} → {repo.working_dir}")
-
-                # Fetch only 1 commit from the remote
-                origin.fetch("refs/heads/main", depth=1)
-                origin_main = origin.refs["main"]  # Reference to 'origin/main'
-                try:
-                    head = repo.heads["main"]  # Reference to existing local 'main'
-                except IndexError:
-                    # Create a local 'main'
-                    head = repo.create_head("main", origin_main)
-
-                if (
-                    head.commit != origin_main.commit  # Commit differs
-                    or repo.is_dirty()  # Working dir is dirty
-                    or len(repo.index.diff(head.commit))
-                ):
-                    # Check out files into the working directory
-                    head.set_tracking_branch(origin_main).checkout()
-        finally:
-            del blf  # Release lock
+                    path.rmdir()  # Fails if something appeared during the clone
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    raise in_use from None
+            new.rename(path)
+        except BaseException:
+            if old.exists():
+                old.rename(path)
+            _rmtree(staging)
+            raise
+        else:
+            _rmtree(staging)
 
     def parametrize(self, metafunc) -> None:
         """Handle the ``parametrize_specimens`` mark for a specific test."""
@@ -230,6 +338,7 @@ def add_responses(session: "Session", file_cache_path: Path, source: "Source") -
     import sdmx
     from sdmx.format import MediaType
     from sdmx.message import StructureMessage
+    from sdmx.rest import Resource
     from sdmx.util.requests import save_response
 
     # Access the file cache in the given directory
@@ -242,39 +351,13 @@ def add_responses(session: "Session", file_cache_path: Path, source: "Source") -
     content: bytes = sdmx.to_xml(StructureMessage())
     headers = {"Content-Type": repr(MediaType("generic", "xml", "2.1"))}
 
-    for endpoint in (
-        "actualconstraint",
-        "agencyscheme",
-        "allowedconstraint",
-        "attachementconstraint",
-        "availableconstraint",
-        "categorisation",
-        "categoryscheme",
-        "codelist",
-        "conceptscheme",
-        "contentconstraint",
-        "customtypescheme",
-        "dataconsumerscheme",
-        "dataflow",
-        "dataproviderscheme",
-        "datastructure",
-        "hierarchicalcodelist",
-        "metadataflow",
-        "metadatastructure",
-        "namepersonalisationscheme",
-        "organisationscheme",
-        "organisationunitscheme",
-        "process",
-        "provisionagreement",
-        "reportingtaxonomy",
-        "rulesetscheme",
-        "schema/datastructure",
-        "structure",
-        "structureset",
-        "transformationscheme",
-        "userdefinedoperatorscheme",
-        "vtlmappingscheme",
-    ):
+    for resource in Resource:
+        if resource in (Resource.data, Resource.metadata, Resource.registration):
+            continue  # Not structure queries with this form of URL
+
+        endpoint = (
+            "schema/datastructure" if resource is Resource.schema else resource.value
+        )
         for url in (
             f"{source.url}/{endpoint}/{source.id}/all/latest",
             f"{source.url}/{endpoint}/{source.id}/all/latest?references=children",

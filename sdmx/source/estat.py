@@ -7,46 +7,37 @@ from zipfile import ZipFile
 import requests
 
 from sdmx.rest import Resource
+from sdmx.rest.common import RequestSpec
 from sdmx.source import Source as BaseSource
 
 log = logging.getLogger(__name__)
 
 
-def handle_references_param(kwargs: dict) -> None:
+def handle_references_param(request: RequestSpec) -> None:
     """Handle the "references" query parameter for ESTAT and similar.
 
     For this parameter, the server software behind ESTAT's data source only supports
     (as of 2022-11-13) the values "children", "descendants", or "none". Other values—
-    including the "all" or parentsandsiblings" used as defaults by :class:`.Client`—
+    including the "all" or parentsandsiblings" used as defaults by :class:`.URL`—
     result in error messages.
 
-    This handler, used via :meth:`.Source.modify_request_args`:
+    This handler, used via :meth:`.Source.modify_request`:
 
-    - Replaces the defaults of "all" or "parentsandsiblings" set by :class:`.Client`
+    - Replaces the defaults of "all" or "parentsandsiblings" set by :class:`.URL`
       with "descendants".
     - Replaces other, unsupported values with "none".
     """
-    try:
-        resource_type = kwargs.get("resource_type") or Resource.from_obj(
-            kwargs["resource"]
-        )
-    except KeyError:
-        resource_type = None
-    resource_id = kwargs.get("resource_id") or getattr(
-        kwargs.get("resource", None), "id", None
-    )
-    params = kwargs.setdefault("params", {})
-    if "references" in kwargs:
-        params["references"] = kwargs.pop("references")
+    params = request.params
 
-    # Preempt default values that would be set by Client._request_from_args()
-    if not params.get("references"):
-        if resource_type == Resource.datastructure and resource_id:
-            params["references"] = "descendants"
-        elif (
-            resource_type == Resource.dataflow and resource_id
-        ) or resource_type == Resource.categoryscheme:
-            params["references"] = "descendants"
+    # Preempt default values that would be set by URL
+    if not params.get("references") and (
+        (
+            request.resource_type in (Resource.dataflow, Resource.datastructure)
+            and request.resource_id
+        )
+        or request.resource_type == Resource.categoryscheme
+    ):
+        params["references"] = "descendants"
 
     # Replace unsupported values
     references = params.get("references")
@@ -70,33 +61,31 @@ class Source(BaseSource):
 
     _id = "ESTAT"
 
-    def modify_request_args(self, kwargs):
-        """Modify arguments used to build query URL.
+    hook_options = frozenset({"get_footer_url"})
 
+    def modify_request(self, request: RequestSpec) -> None:
+        """Handle the ``references`` query parameter.
 
         See also
         --------
         :pull:`107`, :pull:`108`
         """
-        super().modify_request_args(kwargs)
+        handle_references_param(request)
 
-        kwargs.pop("get_footer_url", None)
-
-        handle_references_param(kwargs)
-
-    def finish_message(self, message, request, get_footer_url=(30, 3), **kwargs):
+    def finish_message(self, message, client, request: RequestSpec):
         """Handle the initial response.
 
         This hook identifies the URL in the footer of the initial response,
         makes a second request (polling as indicated by *get_footer_url*), and
         returns a new DataMessage with the parsed content.
 
-        Parameters
-        ----------
+        Other Parameters
+        ----------------
         get_footer_url : (int, int)
-            Tuple of the form (`seconds`, `attempts`), controlling the interval
-            between attempts to retrieve the data from the URL, and the
-            maximum number of attempts to make.
+            Argument to :meth:`.Client.get`. A tuple of the form (`seconds`,
+            `attempts`), controlling the interval between attempts to retrieve the data
+            from the URL, and the maximum number of attempts to make. Default:
+            ``(30, 3)``.
         """
         # Check the message footer for a text element that is a valid URL
         url = None
@@ -109,20 +98,19 @@ class Source(BaseSource):
             return message
 
         # Unpack arguments
-        wait_seconds, attempts = get_footer_url
+        wait_seconds, attempts = request.options.get("get_footer_url", (30, 3))
 
         # Create a temporary file to store the ZIP response
-        ntf = NamedTemporaryFile(prefix="sdmx-")
-        # Make a limited number of attempts to retrieve the file
-        for a in range(attempts):
-            sleep(wait_seconds)
-            try:
-                # This line succeeds if the file exists; the ZIP response is stored to
-                # ntf, and then used by the handle_response() hook below
-                return request.get(url=url, tofile=ntf.file)
-            except requests.HTTPError:
-                raise
-        ntf.close()
+        with NamedTemporaryFile(prefix="sdmx-") as ntf:
+            # Make a limited number of attempts to retrieve the file
+            for a in range(attempts):
+                sleep(wait_seconds)
+                try:
+                    # The ZIP response is stored to ntf, then used by handle_response()
+                    return client.get(url=url, tofile=ntf.file)
+                except requests.HTTPError:
+                    if a + 1 == attempts:
+                        raise
         raise RuntimeError("Maximum attempts exceeded")
 
     def handle_response(self, response, content):
@@ -133,7 +121,7 @@ class Source(BaseSource):
         contained XML file.
         """
 
-        if response.headers["content-type"] != "application/octet-stream":
+        if response.headers.get("content-type") != "application/octet-stream":
             return response, content
 
         # Read all the input, forcing it to be copied to

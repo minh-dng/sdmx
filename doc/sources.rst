@@ -240,8 +240,7 @@ Website `1 <https://wikis.ec.europa.eu/pages/viewpage.action?pageId=40708145>`__
 .. automodule:: sdmx.source.estat
    :members: Source, handle_references_param
 
-.. automodule:: sdmx.source.estat3
-   :members: Source
+``ESTAT3`` uses the agency ID ``ESTAT`` for structure and data queries by default (:attr:`~.Source.default_agency`).
 
 .. _ESTAT_COMEXT:
 
@@ -249,6 +248,7 @@ Website `1 <https://wikis.ec.europa.eu/pages/viewpage.action?pageId=40708145>`__
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - The :class:`.Agency` ID for data is still ``ESTAT``.
+  Structure queries use it by default (:attr:`~.Source.default_agency`).
 
 .. _COMP:
 .. _EMPL:
@@ -412,8 +412,9 @@ Website `(en) <https://www.insee.fr/en/information/2868055>`__,
   - :issue:`205`: as of 2024-11-12 some structures, for instance ``urn:sdmx:…DataStructure=FR1:CNA-2014-PIB(1.0)``, include :attr:`~.Component.concept_identity` references that do not exist, for instance ``urn:sdmx:…Concept=FR1:CONCEPTS_INSEE(1.0).TIME_PERIOD`` and ``urn:sdmx:…Concept=FR1:CONCEPTS_INSEE(1.0).OBS_VALUE``.
     From :ref:`v2.20.0 <2.20.0>`, :mod:`.reader.xml.v21` discards such invalid references, leaving :py:`.concept_identity = None`.
 
-.. autoclass:: sdmx.source.insee.Source()
-   :members:
+- Structure queries use the agency ID ``ALL`` by default, because the service does not accept ``INSEE``; see :issue:`21`.
+  Data queries are not affected.
+  This is the :attr:`~.Source.default_agency` of the source.
 
 
 .. _ISTAT:
@@ -445,7 +446,8 @@ SDMX-ML —
 `Website <https://osp.stat.gov.lt/rdb-rest>`__
 
 - Lithuanian name: Lietuvos statistikos.
-- This web service returns the non-standard HTTP content-type "application/force-download"; :mod:`sdmx` replaces it with "application/xml".
+- This web service returns the non-standard HTTP content-type "application/force-download".
+  :mod:`sdmx` identifies the format from the content.
 
 
 .. _NB:
@@ -481,8 +483,6 @@ Organisation for Economic Cooperation and Development
 
 .. _OECD:
 
-.. currentmodule:: sdmx.source.oecd
-
 ``OECD`` (SDMX-ML)
 ~~~~~~~~~~~~~~~~~~
 
@@ -493,26 +493,22 @@ Documentation `1 <https://gitlab.algobank.oecd.org/public-documentation/dotstat-
 `3 <https://www.oecd.org/en/data/insights/data-explainers/2024/11/Api-best-practices-and-recommendations.html>`__
 
 - This source implements the SDMX-REST 1.x API and serves SDMX-ML 2.1 and SDMX-JSON 1.0.0.
+- The structures and data flows use a variety of agency IDs, for example “OECD.SDD.TPS”, to identify the organizational unit within the OECD that is responsible for each object.
+  Queries for structures with the agency ID “OECD” may return few or zero results.
+  :mod:`sdmx` uses the agency ID ``ALL`` by default; see :attr:`~.Source.default_agency`.
 - The OECD website `describes an older SDMX-ML API <https://data.oecd.org/api/sdmx-ml-documentation/>`__,
   but this is an implementation of SDMX 2.0,
   which is not supported by :mod:`sdmx` (see :ref:`sdmx-version-policy`).
-
-.. autoclass:: sdmx.source.oecd.Source
-   :members:
 
 .. versionadded:: 2.12.0
 
 .. _OECD3:
 
-.. currentmodule:: sdmx.source.oecd3
-
 ``OECD3``
 ~~~~~~~~~
 
 - This source implements the SDMX-REST 2.x API and serves SDMX-ML 3.0.0 and SDMX-JSON 2.0.0.
-
-.. autoclass:: sdmx.source.oecd3.Source
-   :members:
+- Structure queries use the agency ID ``*`` by default, not the package-specific source ID ``OECD3``.
 
 .. _OECD_JSON:
 
@@ -544,8 +540,8 @@ SDMX-JSON
 SDMX-ML —
 `Website <https://registry.sdmx.org/overview.html>`__
 
-.. autoclass:: sdmx.source.sgr.Source()
-   :members:
+- This web service does not give a content-type for some responses.
+  :mod:`sdmx` identifies the format from the content.
 
 
 .. _SPC:
@@ -632,7 +628,7 @@ SDMX-ML or SDMX-JSON —
 
 - UNICEF also serves data for the `Countdown to 2030 <https://www.countdown2030.org/about>`_ initiative
   under a data flow with the ID ``CONSOLIDATED``.
-  The structures can be obtained by giving the `provider` argument to a structure query,
+  The structures can be obtained by giving the `agency_id` argument to a structure query,
   and then querying the data:
 
   .. code-block:: python
@@ -642,7 +638,7 @@ SDMX-ML or SDMX-JSON —
      UNICEF = sdmx.Client("UNICEF")
 
      # Use the dataflow ID to obtain the data structure definition
-     dsd = UNICEF.dataflow("CONSOLIDATED", provider="CD2030").structure[0]
+     dsd = UNICEF.dataflow("CONSOLIDATED", agency_id="CD2030").structure[0]
 
      # Use the DSD to construct a query for indicator D5 (“Births”)
      UNICEF.data("CONSOLIDATED", key=dict(INDICATOR="D5"), dsd=dsd)
@@ -703,6 +699,8 @@ Website `(en) <https://de-mtss.simel.mtss.gub.uy/?lc=en>`__,
 SDMX-ML —
 `Website <https://wits.worldbank.org>`__
 
+- Structure queries use the agency ID ``WBG_WITS`` by default.
+
 
 .. _WB_WDI:
 
@@ -729,6 +727,10 @@ For built-in subclasses of Source used to provide :mod:`sdmx`'s built-in support
 
    This class should not be instantiated directly.
    Instead, use :func:`.add_source`, and then create a new :class:`.Client` with the corresponding source ID.
+
+:meth:`.Client.get` describes each query with a :class:`.RequestSpec`.
+It passes the description to :meth:`.Source.modify_request`, then fills in the :attr:`~.Source.default_agency` and :attr:`~.Source.headers` of the source for what is still missing, and builds the URL.
+Arguments that only a hook of the source uses are listed in :attr:`.Source.hook_options`; they reach the hooks in :attr:`.RequestSpec.options` and never reach the URL.
 
 .. automodule:: sdmx.source
    :members: list_sources, load_package_sources

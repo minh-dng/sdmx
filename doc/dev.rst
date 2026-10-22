@@ -63,6 +63,9 @@ The simplest way to do this is to give the :program:`--sdmx-fetch-data` option w
   $ pytest --sdmx-fetch-data
 
 This invokes :meth:`SpecimenCollection.fetch`, which uses :program:`git` (via `GitPython <https://gitpython.readthedocs.io>`_) to retrieve and unpack the files to a directory like :file:`$HOME/.cache/sdmx/test-data/`.
+The method clones the repository if the directory is missing, and restores files that were deleted or modified.
+If the files are already present and unchanged, it does not use the network.
+To update the files to the latest version, give :program:`--sdmx-refresh-data` instead.
 :ref:`See below <sdmx-test-data>` for more advanced options.
 
 Contents and layout

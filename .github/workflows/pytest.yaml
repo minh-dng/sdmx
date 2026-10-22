@@ -58,42 +58,21 @@ jobs:
       run: echo "week=$(date +%G-W%V)" >> "$GITHUB_OUTPUT"
       shell: bash
 
-    # Warm cache for the SDMX-ML schema zipballs, so that the default test suite needs
-    # no large downloads
+    # Warm cache for the test data and SDMX-ML schemas, so that the default test suite
+    # needs no large downloads
     - name: Cache sdmx test data and schemas
       uses: actions/cache@v5
       with:
         path: ${{ steps.sdmx-cache.outputs.dir }}
         key: ${{ runner.os }}-sdmx-cache-${{ steps.week.outputs.week }}
 
+    # --sdmx-fetch-data clones the test data if the cache lacks it and repairs a damaged
+    # checkout; a clean checkout restored from the cache needs no network access
     - name: Run pytest
-      run: |
-        # Fetch test data only when not restored from a cache that contains a
-        # completed checkout, so that most runs need no network access; the cache is
-        # refreshed by the first run of each week
-        args=(--color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto)
-        data_dir="${{ steps.sdmx-cache.outputs.dir }}/test-data"
-        if ! git -C "$data_dir" rev-parse HEAD &>/dev/null ||
-           ! git -C "$data_dir" diff --quiet HEAD --; then
-          # Only this disposable CI checkout: fetch does not restore deleted files
-          # or overwrite modified files in an existing checkout.
-          uv run --no-sync python -c '
-        import os, shutil, stat, sys
-        from pathlib import Path
-
-        def remove_readonly(func, path, error):
-            if not isinstance(error[1], PermissionError):
-                raise error[1]
-            os.chmod(path, stat.S_IWRITE)
-            func(path)
-
-        path = Path(sys.argv[1])
-        if path.exists():
-            shutil.rmtree(path, onerror=remove_readonly)
-          ' "$data_dir"
-          args+=(--sdmx-fetch-data)
-        fi
-        uv run --no-sync pytest "${args[@]}"
+      run: >
+        uv run --no-sync pytest
+        --color=yes --durations=20 -ra --verbose --cov-report=xml --numprocesses=auto
+        --sdmx-fetch-data
       shell: bash
 
     - name: Upload test coverage to Codecov.io

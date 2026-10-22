@@ -77,6 +77,9 @@ Top-level methods and classes
    :exclude-members: Resource
    :show-inheritance:
 
+.. autoclass:: sdmx.rest.common.RequestSpec
+   :members:
+
 ``rest.v21``
 ------------
 

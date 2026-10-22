@@ -3,10 +3,68 @@
 What's new?
 ***********
 
-Next release
-============
+.. Next release
+   ============
+
+v3.0.0 (2026-10-22)
+===================
+
+This release changes the hooks of :class:`sdmx.source.Source`, the pytest plugin :mod:`sdmx.testing`, and the files that :func:`.install_schemas` keeps in the cache.
+It does not keep the old interfaces.
 
 Includes changes from upstream v2.28.0 (2026-10-18).
+
+Breaking changes
+----------------
+
+- :class:`.Client` describes each query with a new :class:`.RequestSpec`.
+  :meth:`sdmx.source.Source.modify_request` replaces :meth:`!Source.modify_request_args`, and receives and edits the description instead of a :class:`dict` shared with the URL builder.
+  :meth:`sdmx.source.Source.finish_message` now has the signature :py:`finish_message(message, client, request)`; `request` is the :class:`.RequestSpec`, instead of keyword arguments.
+  Arguments to :meth:`.Client.get` that only a hook uses, such as :py:`get_footer_url=` for :ref:`ESTAT` and :py:`format=` for :ref:`ABS`, are listed in :attr:`sdmx.source.Source.hook_options`.
+- Remove the :py:`provider=` argument to :meth:`.Client.get`; use :py:`agency_id=`.
+  Giving :py:`provider=` raises :class:`TypeError`.
+- Add the attribute :attr:`sdmx.source.Source.default_agency` (key ``"default_agency"`` in :file:`sources.json`), and the key ``"*"`` for all resource types in :attr:`sdmx.source.Source.headers`.
+  The classes for :ref:`INSEE`, :ref:`ISTAT`, :ref:`OECD`, :ref:`OECD3`, :ref:`WB`, :ref:`SGR`, ``SGR3``, ``IMF_DATA`` and ``IMF_DATA3`` are removed; their differences are in :file:`sources.json`.
+  The default agency applies to structure queries and to SDMX-REST 3.0.0 data queries.
+  Under 2.1 the data URL has no agency.
+  Data queries to ``ESTAT3`` (``ESTAT``), ``IMF_DATA3`` and ``SGR3`` (``all``), and ``OECD3`` (``*``) use these agencies whether or not the query has a key.
+  Before, a data query with a key used the ID of the source, which the services do not accept.
+- Choose the reader for a response by its ``content-type`` header, then by its content, as :func:`sdmx.read_sdmx` does (new :func:`.get_first_reader`).
+  The :py:`handle_response` hooks of ``SGR`` and ``LSD`` are removed.
+  :meth:`sdmx.source.Source.handle_response` is called for every response, not only for those that cannot be parsed.
+- :func:`.install_schemas` keeps one directory per SDMX-ML version in the cache, :file:`sdmx-ml-{tag}`, in place of a ZIP file and a directory named by the archive.
+  Remove the old files if you want to free the space.
+  The archive comes from codeload.github.com; the GitHub API is not used.
+- Replace the private functions for the schema cache with :func:`!sdmx.format.xml.schemas.ensure_schemas`.
+  The fixture ``mock_gh_api`` is removed.
+  ``filelock`` is now a dependency of :mod:`sdmx`, not only of the test suite: it serializes the building of a cache entry across processes.
+- :class:`.SpecimenCollection` clones, repairs, and (with the new option :program:`--sdmx-refresh-data`) updates the checkout of sdmx-test-data.
+  :program:`--sdmx-fetch-data` no longer updates a checkout that is complete.
+  Only the default location is repaired, and a replacement clone is made before the old directory is removed.
+  A directory given with :program:`--sdmx-test-data` or ``SDMX_TEST_DATA`` is cloned into only if it is missing or empty; sdmx never deletes or resets it, and raises an error if it is not a clean checkout.
+  The CI workflow no longer repairs the checkout itself.
+- Move :class:`.DataSourceTest` from ``sdmx.tests.test_sources`` to :mod:`sdmx.testing`.
+  :attr:`sdmx.source.Source.supports` for sources that do not return SDMX-ML is :any:`False` for all but data; it was :any:`True` for metadata.
+
+Other changes
+-------------
+
+- Fix: the :py:`get_footer_url` argument of :ref:`ESTAT` is used.
+  It was discarded, so :meth:`!finish_message` always used the default interval of 30 seconds.
+  Failed footer downloads are retried up to the requested number of attempts.
+- Fix: no source triggers the :class:`DeprecationWarning` for :py:`provider=`.
+- Fix: headers from the caller replace the headers of the source one by one.
+  Before, any header from the caller removed the ``Accept`` header of the source.
+- Fix: a :py:`dsd=` argument with a :class:`str` key is passed to the reader.
+- Fix: :ref:`BBK` no longer changes the shared :attr:`sdmx.source.Source.url` for each request.
+- Fix: sniffing the content of a response or stream skips a UTF-8 byte order mark.
+- Fix: :func:`.validate_xml` does not create directories.
+- Fix: each schema cache entry is published once and complete.
+  An entry that lacks any XSD document recorded when it was built (file :file:`sdmx-schemas.txt`) is rebuilt.
+  Concurrent processes build an entry one at a time and reuse the result, so none removes an entry that another has just published.
+
+Changes from upstream
+---------------------
 
 - Add :file:`CONTRIBUTING.md`, including a Code of Conduct for contributors (:pull:`292`).
 - :mod:`sdmx` supports Python 3.15, `released 2026-10-09 <https://www.python.org/downloads/release/python-3150/>`_ (:pull:`293`).

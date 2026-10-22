@@ -1,7 +1,13 @@
 import json
-from contextlib import nullcontext
+import os
+import stat
+import sys
+from pathlib import Path
 
-from sdmx.testing import installed_schemas
+import git
+import pytest
+
+from sdmx.testing import data
 from sdmx.testing.report import main
 
 
@@ -18,45 +24,333 @@ def test_report_main(tmp_path):
     assert tmp_path.joinpath("index.html").exists()
 
 
-def test_installed_schemas_worker_isolation(monkeypatch, tmp_path):
-    import sdmx.testing as testing
+@pytest.fixture
+def remote(tmp_path, monkeypatch) -> Path:
+    """A local bare repository with one commit, standing in for sdmx-test-data."""
+    work = tmp_path / "work"
+    with git.Repo.init(work, initial_branch="main") as repo:
+        (work / "specimen.xml").write_text("original")
+        repo.index.add(["specimen.xml"])
+        repo.index.commit("Initial")
+        bare = tmp_path / "remote.git"
+        repo.clone(bare, bare=True).close()
+    monkeypatch.setattr(data, "REMOTE_URL", str(bare))
+    return bare
 
-    cache = tmp_path / "cache"
-    cache.mkdir()
-    monkeypatch.setattr("platformdirs.user_cache_path", lambda app, **kwargs: cache)
-    locks = []
-    monkeypatch.setattr(
-        testing, "FileLock", lambda path: (locks.append(path), nullcontext())[1]
-    )
-    monkeypatch.setattr(
-        "sdmx.format.xml.common.install_schemas",
-        lambda path, version: path.mkdir(parents=True, exist_ok=True),
-    )
 
-    class WorkerPaths:
-        def __init__(self, worker):
-            self.base = tmp_path / worker
-            self.base.mkdir()
+@pytest.fixture
+def checkout(tmp_path, monkeypatch) -> Path:
+    """The location of the checkout that sdmx manages."""
+    path = tmp_path / "test-data"
+    monkeypatch.setattr(data, "DEFAULT_DIR", path)
+    return path
 
-        def mktemp(self, name):
-            path = self.base / name
-            path.mkdir()
-            return path
 
-        def getbasetemp(self):
-            return self.base
+@pytest.mark.parametrize(
+    "state", ["missing", "clean", "deleted", "modified", "no-index"]
+)
+def test_specimen_collection_fetch(
+    tmp_path, monkeypatch, remote, checkout, state
+) -> None:
+    """:meth:`.SpecimenCollection.fetch` leaves a usable checkout in every state."""
+    specimen = checkout / "specimen.xml"
+    if state != "missing":
+        data.SpecimenCollection(checkout, fetch=True)
+        if state == "deleted":
+            specimen.unlink()
+        elif state == "no-index":
+            (checkout / ".git" / "index").unlink()
+            specimen.unlink()
+        elif state == "modified":
+            specimen.write_text("changed")
 
-    paths = []
-    for worker in ("gw0", "gw1"):
-        fixture = installed_schemas.__wrapped__(
-            worker, nullcontext(), WorkerPaths(worker)
-        )
-        path = next(fixture)
-        paths.append(path)
-        fixture.close()
+        # Repair needs no network access
+        monkeypatch.setattr(data, "REMOTE_URL", "/does/not/exist")
 
-    assert paths[0] != paths[1]
-    assert all(
-        (path / version).is_dir() for path in paths for version in ("2.1", "3.0.0")
-    )
-    assert locks == [cache / "schemas.lock"] * 2
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert specimen.read_text() == "original"
+
+
+def test_specimen_collection_fetch_damaged_repository(remote, checkout) -> None:
+    """A managed checkout whose repository is damaged is cloned again."""
+    data.SpecimenCollection(checkout, fetch=True)
+    data._rmtree(checkout / ".git" / "objects")
+
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert (checkout / "specimen.xml").read_text() == "original"
+
+
+def test_specimen_collection_fetch_refresh(tmp_path, remote, checkout) -> None:
+    """Only `refresh` retrieves new commits."""
+    data.SpecimenCollection(checkout, fetch=True)
+
+    with git.Repo.clone_from(remote, tmp_path / "other") as other:
+        (tmp_path / "other" / "specimen.xml").write_text("updated")
+        other.index.add(["specimen.xml"])
+        other.index.commit("Update")
+        other.remotes["origin"].push("main")
+
+    data.SpecimenCollection(checkout, fetch=True)
+    assert (checkout / "specimen.xml").read_text() == "original"
+
+    data.SpecimenCollection(checkout, fetch=True, refresh=True)
+    assert (checkout / "specimen.xml").read_text() == "updated"
+
+
+def test_specimen_collection_fetch_refresh_keeps_checkout_on_error(
+    tmp_path, remote, checkout
+) -> None:
+    """A failed refresh does not remove a good checkout."""
+    data.SpecimenCollection(checkout, fetch=True)
+    remote.rename(tmp_path / "moved.git")
+
+    with pytest.raises(git.GitCommandError):
+        data.SpecimenCollection(checkout, fetch=True, refresh=True)
+
+    assert (checkout / "specimen.xml").read_text() == "original"
+
+
+def test_specimen_collection_fetch_failed_clone_keeps_directory(
+    tmp_path, checkout, monkeypatch
+) -> None:
+    """A managed directory is removed only after the new clone succeeds."""
+    checkout.mkdir()
+    (checkout / "mine.txt").write_text("keep")
+    monkeypatch.setattr(data, "REMOTE_URL", str(tmp_path / "missing.git"))
+
+    with pytest.raises(git.GitCommandError):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (checkout / "mine.txt").read_text() == "keep"
+    assert len(list(tmp_path.glob("test-data.*"))) == 0
+
+
+def test_specimen_collection_fetch_failed_publication_keeps_directory(
+    tmp_path, remote, checkout, monkeypatch
+) -> None:
+    """A failed rename restores the directory that was there before the clone."""
+    checkout.mkdir()
+    (checkout / "mine.txt").write_text("keep")
+    rename = Path.rename
+
+    def fail_publication(self, target):
+        if target == checkout and not (self / "mine.txt").exists():
+            raise PermissionError("Cannot publish clone")
+        return rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", fail_publication)
+    with pytest.raises(PermissionError, match="Cannot publish clone"):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (checkout / "mine.txt").read_text() == "keep"
+    assert list(tmp_path.glob("test-data.*")) == []
+
+
+@pytest.mark.parametrize("broken_git", [False, True])
+def test_specimen_collection_fetch_custom_directory(
+    tmp_path, remote, broken_git
+) -> None:
+    """A directory that sdmx does not manage and cannot use is not changed."""
+    custom = tmp_path / "files"
+    custom.mkdir()
+    (custom / "mine.txt").write_text("keep")
+    if broken_git:
+        (custom / ".git").mkdir()
+        (custom / ".git" / "HEAD").write_text("garbage")
+
+    with pytest.raises(FileExistsError, match="does not change"):
+        data.SpecimenCollection(custom, fetch=True)
+
+    assert (custom / "mine.txt").read_text() == "keep"
+    assert (custom / ".git").exists() == broken_git
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_specimen_collection_fetch_custom_repository(tmp_path, remote, refresh) -> None:
+    """A repository that sdmx does not manage is never reset."""
+    custom = tmp_path / "custom"
+    data.SpecimenCollection(custom, fetch=True)  # Empty directory: cloned
+    (custom / "specimen.xml").write_text("my edit")
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(custom, fetch=True, refresh=refresh)
+
+    assert (custom / "specimen.xml").read_text() == "my edit"
+
+
+def test_specimen_collection_fetch_custom_repository_refresh(tmp_path, remote) -> None:
+    """A clean repository that sdmx does not manage cannot be refreshed."""
+    custom = tmp_path / "custom"
+    data.SpecimenCollection(custom, fetch=True)
+
+    with pytest.raises(RuntimeError, match="cannot be refreshed"):
+        data.SpecimenCollection(custom, fetch=True, refresh=True)
+
+    # A clean repository is otherwise used as is
+    data.SpecimenCollection(custom, fetch=True)
+
+
+def test_specimen_collection_fetch_symlinked_default(
+    tmp_path, remote, checkout
+) -> None:
+    """A symbolic link at the default location leads to a directory sdmx does not own."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user, fetch=True)
+    (user / "specimen.xml").write_text("my edit")
+    checkout.symlink_to(user, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (user / "specimen.xml").read_text() == "my edit"
+
+
+def test_specimen_collection_fetch_symlinked_parent(
+    tmp_path, remote, monkeypatch
+) -> None:
+    """A symbolic link in the path of the default location leads to the user's files."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user / "test-data", fetch=True)
+    (user / "test-data" / "specimen.xml").write_text("my edit")
+    (tmp_path / "link").symlink_to(user, target_is_directory=True)
+    linked = tmp_path / "link" / "test-data"
+    monkeypatch.setattr(data, "DEFAULT_DIR", linked)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(linked, fetch=True)
+
+    assert (user / "test-data" / "specimen.xml").read_text() == "my edit"
+
+
+def test_specimen_collection_fetch_symlinked_git_directory(
+    tmp_path, remote, checkout
+) -> None:
+    """A ``.git`` that is a symbolic link leads to a repository sdmx does not own."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user, fetch=True)
+    checkout.mkdir()
+    (checkout / ".git").symlink_to(user / ".git", target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert not (checkout / "specimen.xml").exists()
+
+
+@pytest.mark.parametrize("damaged", [False, True])
+@pytest.mark.parametrize("worktree_config", [False, True])
+def test_specimen_collection_fetch_core_worktree(
+    tmp_path, remote, checkout, damaged, worktree_config
+) -> None:
+    """A repository whose work tree is elsewhere is not reset."""
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "specimen.xml").write_text("my edit")
+    data.SpecimenCollection(checkout, fetch=True)
+    with git.Repo(checkout) as repo:
+        if worktree_config:
+            repo.git.config("extensions.worktreeConfig", "true")
+            repo.git.config("--worktree", "core.worktree", str(user))
+        else:
+            repo.git.config("core.worktree", str(user))
+    if damaged:
+        (checkout / ".git" / "index").write_bytes(b"corrupt")
+    (checkout / "mine.txt").write_text("keep")
+
+    with pytest.raises(FileExistsError if damaged else RuntimeError):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (user / "specimen.xml").read_text() == "my edit"
+    assert (checkout / "mine.txt").read_text() == "keep"
+
+
+def test_specimen_collection_fetch_keeps_mode_of_linked_file(
+    tmp_path, remote, checkout
+) -> None:
+    """Removing a damaged checkout does not change files that its links lead to."""
+    outside = tmp_path / "outside.txt"
+    outside.write_text("mine")
+    outside.chmod(0o640)
+    mode = stat.S_IMODE(outside.stat().st_mode)
+    data.SpecimenCollection(checkout, fetch=True)
+    (checkout / "link").symlink_to(outside)
+    data._rmtree(checkout / ".git" / "objects")
+
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert not (checkout / "link").exists()
+    assert stat.S_IMODE(outside.stat().st_mode) == mode
+
+
+def test_specimen_collection_fetch_custom_directory_filled_during_clone(
+    tmp_path, remote, monkeypatch
+) -> None:
+    """A file that appears in a custom directory while cloning is not deleted."""
+    custom = tmp_path / "custom"
+    custom.mkdir()
+    clone_from = git.Repo.clone_from
+
+    def clone_then_create_file(*args, **kwargs):
+        (custom / "mine.txt").write_text("keep")
+        return clone_from(*args, **kwargs)
+
+    monkeypatch.setattr(git.Repo, "clone_from", clone_then_create_file)
+
+    with pytest.raises(FileExistsError, match="does not change"):
+        data.SpecimenCollection(custom, fetch=True)
+
+    assert (custom / "mine.txt").read_text() == "keep"
+    assert [p.name for p in tmp_path.glob("custom.*")] == []
+
+
+def test_specimen_collection_fetch_corrupt_index(remote, checkout) -> None:
+    """A managed checkout with a truncated index is cloned again."""
+    data.SpecimenCollection(checkout, fetch=True)
+    index = checkout / ".git" / "index"
+    index.write_bytes(index.read_bytes()[:20])
+    (checkout / "specimen.xml").unlink()
+
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert (checkout / "specimen.xml").read_text() == "original"
+
+
+def test_specimen_collection_fetch_custom_corrupt_index(tmp_path, remote) -> None:
+    """A custom checkout with a truncated index is not changed."""
+    custom = tmp_path / "custom"
+    data.SpecimenCollection(custom, fetch=True)
+    index = custom / ".git" / "index"
+    index.write_bytes(index.read_bytes()[:20])
+    (custom / "specimen.xml").unlink()
+
+    with pytest.raises(FileExistsError, match="does not change"):
+        data.SpecimenCollection(custom, fetch=True)
+
+    assert not (custom / "specimen.xml").exists()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0, reason="Cannot deny access"
+)
+@pytest.mark.parametrize("name", ["index", "objects", "refs/heads/main"])
+def test_specimen_collection_fetch_unreadable_repository(
+    remote, checkout, name
+) -> None:
+    """A healthy checkout that cannot be read is reported, not cloned again."""
+    data.SpecimenCollection(checkout, fetch=True)
+    blocked = checkout / ".git" / name
+    mode = stat.S_IMODE(blocked.stat().st_mode)
+    blocked.chmod(0)
+    (checkout / "mine.txt").write_text("keep")
+
+    try:
+        # PermissionError, or BrokenPipeError if Git exits before GitPython writes
+        with pytest.raises(OSError):
+            data.SpecimenCollection(checkout, fetch=True)
+    finally:
+        blocked.chmod(mode)
+
+    assert (checkout / ".git").exists()
+    assert (checkout / "mine.txt").read_text() == "keep"

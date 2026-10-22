@@ -1,12 +1,24 @@
+import codecs
+import io
+
 import pytest
 
 from sdmx.format import Flag, MediaType
 from sdmx.model import v21
 from sdmx.reader.base import BaseReader
+from sdmx.reader.xml import Reader as XMLReader
 from sdmx.reader.xml.v21 import Reader as XMLv21Reader
 
 
 class TestBaseReader:
+    @pytest.mark.parametrize("buffer_size", [1, 2, 3, 4096])
+    def test_handles_bom(self, buffer_size):
+        with io.BufferedReader(
+            io.BytesIO(codecs.BOM_UTF8 + b"<Structure/>"), buffer_size=buffer_size
+        ) as stream:
+            assert XMLReader.handles(stream, {})
+            assert stream.tell() == 0
+
     @pytest.fixture
     def MinimalReader(self):
         """A reader that implements the minimum abstract methods."""

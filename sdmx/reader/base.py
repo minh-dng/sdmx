@@ -1,3 +1,4 @@
+import codecs
 import io
 import logging
 import pathlib
@@ -90,7 +91,8 @@ class BaseReader(Converter):
            :attr:`~requests.Response.headers` include a ``content-type`` that is matched
            by one of the :class:`.MediaTypes` in the Reader' :attr:`.media_types`.
         3. `data` is :class:`bytes`, :class:`io.IOBase`, or :class:`io.BufferedReader`
-           and starts with the class' :attr:`.binary_content_startswith` (if any). For
+           and starts with the class' :attr:`.binary_content_startswith` (if any),
+           after any UTF-8 byte order mark. For
            the :mod:`io` classes, this check is performed by 'peeking' at the content
            without changing the position in the file for a later call to
            :meth:`.convert`.
@@ -111,7 +113,11 @@ class BaseReader(Converter):
                 peek = data
             elif isinstance(data, io.BufferedReader):
                 # `data` is a subtype of io.IOBase that supports peek()
-                peek = data.peek(len(bcsw))
+                peek = data.peek(len(codecs.BOM_UTF8) + len(bcsw))
+                if len(peek) < len(codecs.BOM_UTF8) + len(bcsw) and data.seekable():
+                    pos = data.tell()
+                    peek = data.read(len(codecs.BOM_UTF8) + len(bcsw))
+                    data.seek(pos)
             elif isinstance(data, io.IOBase):
                 # `data` is a subtype of io.IOBase that supports tell()/seek()
                 # Formerly in read_sdmx()
@@ -121,7 +127,8 @@ class BaseReader(Converter):
             else:
                 peek = b""
 
-            return peek.startswith(bcsw)
+            # Skip a UTF-8 byte order mark
+            return peek.removeprefix(codecs.BOM_UTF8).startswith(bcsw)
 
         return False
 

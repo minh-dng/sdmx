@@ -1,5 +1,8 @@
 import logging
 
+from sdmx.rest import Resource
+from sdmx.rest.common import RequestSpec
+
 from . import Source as BaseSource
 
 log = logging.getLogger(__name__)
@@ -10,24 +13,13 @@ class Source(BaseSource):
 
     _id = "BBK"
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def modify_request(self, request: RequestSpec) -> None:
+        """Insert "/metadata" in the URL of queries for structures; omit the version."""
+        if request.resource_type is not Resource.data:
+            request.base_url = request.base_url + "/metadata"
 
-        self._base_url = self.url
-
-    def modify_request_args(self, kwargs):
-        super().modify_request_args(kwargs)
-
-        if kwargs["resource_type"] != "data":
-            # Construct the URL: insert "/metadata"
-            self.url = self._base_url + "/metadata"
-
-            # Omit the version part of the URL
-            kwargs.setdefault("version", "")
-            if kwargs["version"] != "":
+            if request.version:
                 log.warning(
-                    f"URL part version={kwargs['version']} not supported; discarded"
+                    f"URL part version={request.version} not supported; discarded"
                 )
-                kwargs["version"] = ""
-        else:
-            self.url = self._base_url
+                request.version = None
