@@ -30,6 +30,7 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+  "filelock",
   "lxml >= 3.6",
   "packaging >= 26",
   "pandas >= 1.0",

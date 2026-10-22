@@ -315,8 +315,8 @@ class MessageTest:
 def installed_schemas(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     """Fixture that ensures schemas are installed locally in a temporary directory.
 
-    Workers sharing the user cache need no coordination: :func:`.ensure_schemas`
-    publishes each cache entry atomically.
+    Workers sharing the user cache need no coordination: :func:`.ensure_schemas` locks
+    and publishes each cache entry atomically.
     """
     from sdmx.format.xml.common import install_schemas
 

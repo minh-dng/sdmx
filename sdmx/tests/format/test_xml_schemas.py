@@ -6,10 +6,13 @@ from pathlib import Path
 import pytest
 import requests
 import responses
+from filelock import FileLock
 
 from sdmx.format import Version
+from sdmx.format.xml import schemas
 from sdmx.format.xml.schemas import (
     _BUNDLED_SCHEMAS,
+    _MANIFEST,
     _fetch_with_retries,
     ensure_schemas,
     github_zipball,
@@ -29,6 +32,7 @@ def zipball(content: str = "<xs:schema/>") -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("sdmx-ml-2.1/schemas/SDMXMessage.xsd", content)
+        zf.writestr("sdmx-ml-2.1/schemas/SDMXCommon.xsd", "<xs:schema/>")
     return buf.getvalue()
 
 
@@ -45,7 +49,8 @@ class FakeFetch:
 
 
 def names(path: Path) -> list[str]:
-    return sorted(p.name for p in path.iterdir())
+    # Windows removes the lock file when releasing it; Unix leaves it in place.
+    return sorted(p.name for p in path.iterdir() if p.suffix != ".lock")
 
 
 def test_ensure_schemas(tmp_path):
@@ -71,9 +76,11 @@ def test_ensure_schemas_cached(tmp_path):
     assert fetch.tags == []
 
 
-@pytest.mark.parametrize("missing", ["SDMXMessage.xsd", *_BUNDLED_SCHEMAS])
+@pytest.mark.parametrize(
+    "missing", ["SDMXMessage.xsd", "SDMXCommon.xsd", *_BUNDLED_SCHEMAS]
+)
 def test_ensure_schemas_rebuilds_incomplete(tmp_path, missing):
-    """An entry lacking any required file is replaced, not completed in place."""
+    """An entry lacking any XSD document is replaced, not completed in place."""
     entry = ensure_schemas(Version["2.1"], tmp_path, FakeFetch())
     entry.joinpath("schemas", missing).unlink()
     entry.joinpath("stale.txt").write_text("from an earlier build")
@@ -109,16 +116,40 @@ def test_ensure_schemas_corrupt_download(tmp_path, data):
     assert names(tmp_path) == ["sdmx-ml-v2.1"]
 
 
-def test_ensure_schemas_concurrent(tmp_path):
-    """If another caller publishes while this one fetches, keep the other's entry."""
+def test_ensure_schemas_rebuilds_unlisted(tmp_path):
+    """An entry without a manifest, as built by an earlier version, is replaced."""
+    entry = ensure_schemas(Version["2.1"], tmp_path, FakeFetch())
+    entry.joinpath(_MANIFEST).unlink()
+
+    fetch = FakeFetch()
+    assert ensure_schemas(Version["2.1"], tmp_path, fetch) == entry
+    assert fetch.tags == ["v2.1"]
+    assert entry.joinpath(_MANIFEST).is_file()
+
+
+def test_ensure_schemas_waits_for_other_repair(tmp_path, monkeypatch):
+    """A caller that finds an entry incomplete reuses another caller's repair.
+
+    Interleaving: this caller sees the incomplete entry, then another caller repairs it
+    before this one gets the lock. This caller must not replace the repaired entry.
+    """
+    entry = ensure_schemas(Version["2.1"], tmp_path, FakeFetch())
+    entry.joinpath("schemas", "xml.xsd").unlink()
     other = FakeFetch(zipball("other"))
 
-    def fetch(tag):
-        ensure_schemas(Version["2.1"], tmp_path, other)  # The other caller wins
-        return zipball("ours")
+    class LockAfterOther(FileLock):
+        def acquire(self, *args, **kwargs):
+            monkeypatch.undo()  # Only once
+            ensure_schemas(Version["2.1"], tmp_path, other)
+            return super().acquire(*args, **kwargs)
 
-    entry = ensure_schemas(Version["2.1"], tmp_path, fetch)
+    monkeypatch.setattr(schemas, "FileLock", LockAfterOther)
+    ours = FakeFetch(zipball("ours"))
 
+    assert ensure_schemas(Version["2.1"], tmp_path, ours) == entry
+
+    assert ours.tags == []
+    assert other.tags == ["v2.1"]
     assert entry.joinpath("schemas", "SDMXMessage.xsd").read_text() == "other"
     assert names(tmp_path) == ["sdmx-ml-v2.1"]
 

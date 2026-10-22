@@ -11,6 +11,8 @@ from pathlib import Path
 from shutil import copyfile, rmtree
 from typing import TYPE_CHECKING
 
+from filelock import FileLock
+
 from sdmx.format import Version
 
 if TYPE_CHECKING:
@@ -34,6 +36,10 @@ _TRANSIENT_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 #: (copyright 1998-2002 W3C, redistributed under the W3C Software and Document License)
 #: are bundled, so no request to w3.org is needed.
 _BUNDLED_SCHEMAS = ("xml.xsd", "xhtml1-strict.xsd")
+
+#: Name of the file in each cache entry that lists its XSD documents, relative to the
+#: entry, one per line. An entry is complete when all of these exist.
+_MANIFEST = "sdmx-schemas.txt"
 
 _GIT_TAG = {Version["2.1"]: "v2.1", Version["3.0.0"]: "v3.0.0"}
 
@@ -93,12 +99,12 @@ def github_zipball(tag: str) -> bytes:
 
 
 def _is_complete(entry: Path) -> bool:
-    """:any:`True` if `entry` holds the official schemas and the bundled XSDs."""
-    schemas = entry.joinpath("schemas")
-    return all(
-        schemas.joinpath(name).is_file()
-        for name in ("SDMXMessage.xsd", *_BUNDLED_SCHEMAS)
-    )
+    """:any:`True` if `entry` has the manifest and every XSD document it lists."""
+    try:
+        listed = entry.joinpath(_MANIFEST).read_text().splitlines()
+    except FileNotFoundError:
+        return False
+    return bool(listed) and all(entry.joinpath(name).is_file() for name in listed)
 
 
 def _build(staging: Path, zipball: bytes) -> Path:
@@ -121,6 +127,9 @@ def _build(staging: Path, zipball: bytes) -> Path:
         )
         with importlib.resources.as_file(source) as path:
             copyfile(path, root.joinpath("schemas", name))
+
+    xsd = sorted(p.relative_to(root).as_posix() for p in root.rglob("*.xsd"))
+    root.joinpath(_MANIFEST).write_text("\n".join(xsd) + "\n")
     return root
 
 
@@ -134,13 +143,15 @@ def ensure_schemas(
     The directory is :file:`{cache_root}/sdmx-ml-{tag}`. It contains the unpacked
     sdmx-twg/sdmx-ml repository for the Git tag, and in its :file:`schemas`
     subdirectory, the bundled XSDs. No network access occurs if the directory is
-    already complete; one that lacks a file, for instance from an earlier version of
-    :mod:`sdmx`, is replaced.
+    already complete, that is, if every XSD document recorded when it was built is
+    present. A directory that lacks one, or that an earlier version of :mod:`sdmx`
+    built, is replaced.
 
     The directory is built in a private staging directory next to it and published
-    with a single :meth:`~pathlib.Path.rename`. Concurrent callers (for instance,
-    pytest-xdist workers) therefore never see or modify a partial directory; if two
-    callers publish at once, one of the equivalent results is kept.
+    with a single :meth:`~pathlib.Path.rename`, so readers never see a partial
+    directory. A file lock serializes the building, across processes (for instance,
+    pytest-xdist workers). A caller that waited for the lock reuses what the previous
+    holder published, so a complete directory is never replaced.
 
     Parameters
     ----------
@@ -166,22 +177,19 @@ def ensure_schemas(
     if _is_complete(entry):
         return entry
 
-    staging = cache_root.joinpath(f"{entry.name}.tmp{uuid.uuid4().hex}")
-    staging.mkdir(parents=True)
-    try:
-        root = _build(staging, fetch(tag))
-        if entry.exists() and not _is_complete(entry):
-            log.info(f"Replace incomplete {entry}")
-            try:
-                entry.rename(staging.joinpath("incomplete"))
-            except FileNotFoundError:
-                pass  # Another caller moved it first
+    cache_root.mkdir(parents=True, exist_ok=True)
+    with FileLock(cache_root.joinpath(f"{entry.name}.lock")):
+        if _is_complete(entry):  # Another process published while this one waited
+            return entry
+
+        staging = cache_root.joinpath(f"{entry.name}.tmp{uuid.uuid4().hex}")
+        staging.mkdir()
         try:
+            root = _build(staging, fetch(tag))
+            if entry.exists():
+                log.info(f"Replace incomplete {entry}")
+                entry.rename(staging.joinpath("incomplete"))
             root.rename(entry)
-        except OSError:
-            # Another caller published first; its result is equivalent
-            if not _is_complete(entry):
-                raise
-    finally:
-        rmtree(staging, ignore_errors=True)
+        finally:
+            rmtree(staging, ignore_errors=True)
     return entry

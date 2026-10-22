@@ -34,7 +34,8 @@ Breaking changes
   Remove the old files if you want to free the space.
   The archive comes from codeload.github.com; the GitHub API is not used.
 - Replace the private functions for the schema cache with :func:`!sdmx.format.xml.schemas.ensure_schemas`.
-  The fixture ``mock_gh_api`` and the dependency on ``filelock`` for the test suite are removed.
+  The fixture ``mock_gh_api`` is removed.
+  ``filelock`` is now a dependency of :mod:`sdmx`, not only of the test suite: it serializes the building of a cache entry across processes.
 - :class:`.SpecimenCollection` clones, repairs, and (with the new option :program:`--sdmx-refresh-data`) updates the checkout of sdmx-test-data.
   :program:`--sdmx-fetch-data` no longer updates a checkout that is complete.
   Only the default location is repaired, and a replacement clone is made before the old directory is removed.
@@ -56,7 +57,8 @@ Other changes
 - Fix: :ref:`BBK` no longer changes the shared :attr:`sdmx.source.Source.url` for each request.
 - Fix: :func:`.validate_xml` does not create directories.
 - Fix: each schema cache entry is published once and complete.
-  An entry that lacks a file is rebuilt.
+  An entry that lacks any XSD document recorded when it was built (file :file:`sdmx-schemas.txt`) is rebuilt.
+  Concurrent processes build an entry one at a time and reuse the result, so none removes an entry that another has just published.
 
 Changes from upstream
 ---------------------
