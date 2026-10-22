@@ -1,86 +1,19 @@
 """Tests against the actual APIs for specific data sources."""
 
 import logging
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, ClassVar
 
 import pytest
 
 import sdmx
 from sdmx import Client
 from sdmx.exceptions import HTTPError, XMLParseError
-from sdmx.session import Session
+from sdmx.testing import DataSourceTest
 
 log = logging.getLogger(__name__)
 
 
 NI = "Not implemented in sdmx1"
-
-
-class DataSourceTest:
-    """Base class for data source tests."""
-
-    # TODO also test structure-specific data
-
-    #: Must be one of the IDs in sources.json.
-    source_id: ClassVar[str]
-
-    #: NB the following can be added to any subclass below for SSL failures. Update the
-    #:    docstring to describe the nature of the problem.
-    #: except skip SSL certificate verification
-    client_args: ClassVar[dict] = {}
-
-    #: Keyword arguments for particular endpoints.
-    endpoint_args: ClassVar[dict[str, dict[str, Any]]] = {}
-
-    #: True to xfail if a 503 Error is returned.
-    tolerate_503: ClassVar[bool] = False
-
-    #: Mapping of endpoint → Exception subclass. Tests of these endpoints are expected
-    #: to fail with the given kind of exception.
-    xfail: ClassVar[dict[str, type[Exception] | tuple[type[Exception], str]]] = {}
-
-    #: Failures affecting **all** data sources, internal to :mod:`sdmx`.
-    xfail_common: ClassVar[dict[str, Any]] = {}
-
-    @pytest.fixture(scope="class")
-    def client(self, session_with_pytest_cache: Session) -> Iterator[Client]:
-        """A Client that uses :func:`.session_with_pytest_cache`."""
-        yield Client(self.source_id, session=session_with_pytest_cache)
-
-    @pytest.fixture(scope="class")
-    def client_with_stored_responses(
-        self, session_with_stored_responses: Session
-    ) -> Iterator[Client]:
-        """A Client that uses :func:`.session_with_stored_responses`."""
-        yield Client(self.source_id, session=session_with_stored_responses)
-
-    @pytest.mark.source
-    @pytest.mark.network
-    def test_endpoint(self, pytestconfig, client, endpoint, args):
-        """Test all SDMX-REST endpoints for this data source.
-
-        See also
-        --------
-        generate_endpoint_tests
-        """
-        message = client.get(endpoint, **args)
-
-        if pytestconfig.getoption("verbose"):
-            print(repr(message))
-            if endpoint == "dataflow":
-                # Display the IDs of data flows; this can be used to identify targets
-                # for tests of the data endpoint for a particular source
-                for dfd in message.dataflow:
-                    print(repr(dfd))
-
-        # For debugging
-        # print(cache, cache.read_text(), result, sep="\n\n")
-        # assert False
-
-        # All parsed contents can also be converted to pandas
-        sdmx.to_pandas(message)
 
 
 @pytest.mark.usefixtures("testsource")

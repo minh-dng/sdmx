@@ -264,6 +264,7 @@ def add_responses(session: "Session", file_cache_path: Path, source: "Source") -
     import sdmx
     from sdmx.format import MediaType
     from sdmx.message import StructureMessage
+    from sdmx.rest import Resource
     from sdmx.util.requests import save_response
 
     # Access the file cache in the given directory
@@ -276,39 +277,13 @@ def add_responses(session: "Session", file_cache_path: Path, source: "Source") -
     content: bytes = sdmx.to_xml(StructureMessage())
     headers = {"Content-Type": repr(MediaType("generic", "xml", "2.1"))}
 
-    for endpoint in (
-        "actualconstraint",
-        "agencyscheme",
-        "allowedconstraint",
-        "attachementconstraint",
-        "availableconstraint",
-        "categorisation",
-        "categoryscheme",
-        "codelist",
-        "conceptscheme",
-        "contentconstraint",
-        "customtypescheme",
-        "dataconsumerscheme",
-        "dataflow",
-        "dataproviderscheme",
-        "datastructure",
-        "hierarchicalcodelist",
-        "metadataflow",
-        "metadatastructure",
-        "namepersonalisationscheme",
-        "organisationscheme",
-        "organisationunitscheme",
-        "process",
-        "provisionagreement",
-        "reportingtaxonomy",
-        "rulesetscheme",
-        "schema/datastructure",
-        "structure",
-        "structureset",
-        "transformationscheme",
-        "userdefinedoperatorscheme",
-        "vtlmappingscheme",
-    ):
+    for resource in Resource:
+        if resource in (Resource.data, Resource.metadata, Resource.registration):
+            continue  # Not structure queries with this form of URL
+
+        endpoint = (
+            "schema/datastructure" if resource is Resource.schema else resource.value
+        )
         for url in (
             f"{source.url}/{endpoint}/{source.id}/all/latest",
             f"{source.url}/{endpoint}/{source.id}/all/latest?references=children",

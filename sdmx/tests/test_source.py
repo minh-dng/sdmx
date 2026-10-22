@@ -179,6 +179,8 @@ def test_add_source():
         }"""
     add_source(profile2)
     assert not sources["BAR"].supports["datastructure"]
+    assert not sources["BAR"].supports["metadata"]
+    assert sources["BAR"].supports["data"]
 
     with pytest.raises(
         ValueError, match="Data source 'ECB' already defined; use override=True"

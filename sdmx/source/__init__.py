@@ -30,7 +30,8 @@ sources: dict[str, "Source"] = {}
 #: Valid data content types for SDMX REST API messages.
 DataContentType = Enum("DataContentType", "CSV JSON XML")
 
-#: Default values for :attr:`.Source.supports`. Most of these values indicate REST API
+#: Default values for :attr:`.Source.supports` of sources that return SDMX-ML; sources
+#: that return other formats support only data. Most of these values indicate REST API
 #: endpoints that are described in the standards but are not implemented by any source
 #: currently in :file:`sources.json`; these all return 404.
 SDMX_ML_SUPPORTS = {
@@ -124,7 +125,8 @@ class Source:
             map(lambda v: v if isinstance(v, Version) else Version[v], self.versions)
         )
 
-        # Default feature support: True for sdmx_ml, False otherwise
+        # Default feature support: for SDMX-ML, as in SDMX_ML_SUPPORTS, or else True;
+        # for other formats, only data
         sdmx_ml = self.data_content_type is DataContentType.XML
 
         # Update mapping of supported features
@@ -136,12 +138,13 @@ class Source:
             # 1. The value already in `supports`.
             # 2. A value loaded from sources.json, appearing with a string key `f_name`
             #    in `supports`.
-            # 3. The value in `SDMX_ML_SUPPORTS`, if any.
-            # 4. The value `sdmx_ml`.
-            self.supports.setdefault(
-                feature,
-                self.supports.pop(f_name, SDMX_ML_SUPPORTS.get(feature, sdmx_ml)),
+            # 3. The default described above.
+            default = (
+                SDMX_ML_SUPPORTS.get(feature, True)
+                if sdmx_ml
+                else feature is Resource.data
             )
+            self.supports.setdefault(feature, self.supports.pop(f_name, default))
 
     def get_url_class(self) -> type["sdmx.rest.common.URL"]:
         """Return a class for constructing URLs for this Source.
