@@ -27,13 +27,22 @@ def no_sleep(monkeypatch):
     monkeypatch.setattr(time, "sleep", lambda _: None)
 
 
-def zipball(content: str = "<xs:schema/>") -> bytes:
-    """Bytes of an archive like the one served by GitHub: one top-level directory."""
+def zip_of(members: dict[str, str]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("sdmx-ml-2.1/schemas/SDMXMessage.xsd", content)
-        zf.writestr("sdmx-ml-2.1/schemas/SDMXCommon.xsd", "<xs:schema/>")
+        for name, content in members.items():
+            zf.writestr(name, content)
     return buf.getvalue()
+
+
+def zipball(content: str = "<xs:schema/>") -> bytes:
+    """Bytes of an archive like the one served by GitHub: one top-level directory."""
+    return zip_of(
+        {
+            "sdmx-ml-2.1/schemas/SDMXMessage.xsd": content,
+            "sdmx-ml-2.1/schemas/SDMXCommon.xsd": "<xs:schema/>",
+        }
+    )
 
 
 class FakeFetch:
@@ -101,8 +110,10 @@ def test_ensure_schemas_rebuilds_incomplete(tmp_path, missing):
         b"not a zip file",
         # Valid ZIP metadata, but a member with a wrong CRC
         zipball().replace(b"<xs:schema/>", b"<xs:broken/>"),
+        # No SDMXMessage.xsd, so the bundled XSDs alone would look complete
+        zip_of({"sdmx-ml-2.1/schemas/README": "text"}),
     ],
-    ids=["not-zip", "bad-crc"],  # Bytes contain timestamps: unstable IDs under xdist
+    ids=["not-zip", "bad-crc", "no-primary"],  # Bytes contain timestamps: unstable IDs
 )
 def test_ensure_schemas_corrupt_download(tmp_path, data):
     """A corrupt archive publishes nothing and leaves a complete entry untouched."""

@@ -41,6 +41,10 @@ _BUNDLED_SCHEMAS = ("xml.xsd", "xhtml1-strict.xsd")
 #: entry, one per line. An entry is complete when all of these exist.
 _MANIFEST = "sdmx-schemas.txt"
 
+#: The XSD document that every SDMX-ML message schema set must include, relative to a
+#: cache entry.
+_PRIMARY = "schemas/SDMXMessage.xsd"
+
 _GIT_TAG = {Version["2.1"]: "v2.1", Version["3.0.0"]: "v3.0.0"}
 
 
@@ -99,12 +103,15 @@ def github_zipball(tag: str) -> bytes:
 
 
 def _is_complete(entry: Path) -> bool:
-    """:any:`True` if `entry` has the manifest and every XSD document it lists."""
+    """:any:`True` if `entry` has the manifest and every XSD document it lists.
+
+    The manifest must list :data:`_PRIMARY`.
+    """
     try:
         listed = entry.joinpath(_MANIFEST).read_text().splitlines()
     except FileNotFoundError:
         return False
-    return bool(listed) and all(entry.joinpath(name).is_file() for name in listed)
+    return _PRIMARY in listed and all(entry.joinpath(name).is_file() for name in listed)
 
 
 def _build(staging: Path, zipball: bytes) -> Path:
@@ -121,6 +128,8 @@ def _build(staging: Path, zipball: bytes) -> Path:
         zf.extractall(staging)
 
     root = staging.joinpath(top)
+    if not root.joinpath(_PRIMARY).is_file():
+        raise zipfile.BadZipFile(f"Archive lacks {_PRIMARY}")
     for name in _BUNDLED_SCHEMAS:
         source = importlib.resources.files("sdmx.format.xml").joinpath(
             f"schemas/{name}"
@@ -165,7 +174,8 @@ def ensure_schemas(
     Raises
     ------
     zipfile.BadZipFile
-        if the archive from `fetch` is corrupt. Nothing is published.
+        if the archive from `fetch` is corrupt or lacks :file:`schemas/SDMXMessage.xsd`.
+        Nothing is published.
     """
     if cache_root is None:
         import platformdirs
