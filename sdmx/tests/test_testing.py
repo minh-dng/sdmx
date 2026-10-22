@@ -203,3 +203,24 @@ def test_specimen_collection_fetch_symlinked_default(
         data.SpecimenCollection(checkout, fetch=True)
 
     assert (user / "specimen.xml").read_text() == "my edit"
+
+
+def test_specimen_collection_fetch_custom_directory_filled_during_clone(
+    tmp_path, remote, monkeypatch
+) -> None:
+    """A file that appears in a custom directory while cloning is not deleted."""
+    custom = tmp_path / "custom"
+    custom.mkdir()
+    clone_from = git.Repo.clone_from
+
+    def clone_then_create_file(*args, **kwargs):
+        (custom / "mine.txt").write_text("keep")
+        return clone_from(*args, **kwargs)
+
+    monkeypatch.setattr(git.Repo, "clone_from", clone_then_create_file)
+
+    with pytest.raises(FileExistsError, match="does not change"):
+        data.SpecimenCollection(custom, fetch=True)
+
+    assert (custom / "mine.txt").read_text() == "keep"
+    assert [p.name for p in tmp_path.glob("custom.*")] == []

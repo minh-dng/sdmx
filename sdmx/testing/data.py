@@ -252,21 +252,30 @@ class SpecimenCollection:
         import git
 
         path = self.base_path
+        in_use = FileExistsError(
+            f"{path} exists but is not a usable sdmx-test-data checkout. sdmx does "
+            "not change directories it does not manage. Repair the repository, "
+            "empty or remove the directory, or point --sdmx-test-data / "
+            "SDMX_TEST_DATA elsewhere"
+        )
         if not managed and path.exists() and any(path.iterdir()):
-            raise FileExistsError(
-                f"{path} exists but is not a usable sdmx-test-data checkout. sdmx does "
-                "not change directories it does not manage. Repair the repository, "
-                "empty or remove the directory, or point --sdmx-test-data / "
-                "SDMX_TEST_DATA elsewhere"
-            )
+            raise in_use
 
         log.info(f"Clone test data from {REMOTE_URL} → {path}")
         staging = Path(tempfile.mkdtemp(prefix=f"{path.name}.", dir=path.parent))
         new, old = staging / "checkout", staging / "previous"
         try:
             git.Repo.clone_from(REMOTE_URL, new, depth=1, branch="main").close()
-            if path.exists():
-                path.rename(old)
+            if managed:
+                if path.exists():
+                    path.rename(old)
+            else:
+                try:
+                    path.rmdir()  # Fails if something appeared during the clone
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    raise in_use from None
             new.rename(path)
         except BaseException:
             if old.exists():
