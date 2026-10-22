@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import stat
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -53,6 +54,14 @@ ERROR = (
 #: Git remote URL for cloning test data.
 REMOTE_URL = "https://github.com/khaeru/sdmx-test-data.git"
 # REMOTE_URL = "git@github.com:khaeru/sdmx-test-data.git"
+
+
+def _rmtree(path: Path) -> None:
+    """Remove `path`, including the read-only object files that Git creates."""
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            os.chmod(os.path.join(root, name), stat.S_IRWXU)
+    shutil.rmtree(path)
 
 
 class SpecimenCollection:
@@ -167,48 +176,61 @@ class SpecimenCollection:
     def fetch(self, refresh: bool = False) -> None:
         """Make :attr:`base_path` a usable checkout of sdmx-test-data.
 
-        The checkout is in one of four states, each handled without help from the
-        caller:
+        sdmx manages only the default location, :data:`DEFAULT_DIR`. There, the checkout
+        is in one of four states, each handled without help from the caller:
 
-        - Missing, or a Git repository too damaged to use: clone it.
+        - Missing, or a Git repository too damaged to use: clone it. The old directory
+          is removed only after the new clone is complete.
         - Clean: leave it alone. No network access occurs.
         - Files deleted or modified: restore them from the local repository. No network
           access occurs.
         - With `refresh`, whatever the state: fetch the latest ``main`` from
           :data:`REMOTE_URL` and check it out.
 
-        An existing, non-empty directory that is not a Git repository is never
-        overwritten; :class:`FileExistsError` is raised.
+        Any other path is the user's. It is cloned into only if missing or empty. If it
+        is not a clean, usable checkout, or if `refresh` is given, sdmx changes nothing
+        and raises :class:`FileExistsError` (not a usable checkout) or
+        :class:`RuntimeError` (local changes, or `refresh`).
         """
         import git
 
+        managed = self.base_path == DEFAULT_DIR
         self.base_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Lock to avoid concurrency issues when running with pytest-xdist
         lock = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
         lock._obtain_lock()
         try:
-            if repo := self._usable_repo():
-                with repo:
-                    if refresh:
-                        log.info(f"Fetch test data from {REMOTE_URL}")
-                        repo.remotes["origin"].fetch("refs/heads/main", depth=1)
-                        repo.git.reset("--hard", "FETCH_HEAD")
-            else:
-                self._clone()
+            if not (repo := self._open_repo()):
+                self._clone(managed)
+                return
+
+            with repo:
+                dirty = repo.is_dirty()
+                if not managed and (dirty or refresh):
+                    raise RuntimeError(
+                        f"{self.base_path} is not managed by sdmx and "
+                        + ("has local changes" if dirty else "cannot be refreshed")
+                        + ". Restore it yourself (for instance 'git reset --hard'), or "
+                        f"use the default location {DEFAULT_DIR}"
+                    )
+                if refresh:
+                    log.info(f"Fetch test data from {REMOTE_URL}")
+                    repo.remotes["origin"].fetch("refs/heads/main", depth=1)
+                    repo.git.reset("--hard", "FETCH_HEAD")
+                elif dirty:
+                    log.info(f"Restore files in {self.base_path}")
+                    repo.git.reset("--hard", "HEAD")
         finally:
             lock._release_lock()
 
-    def _usable_repo(self) -> "git.Repo | None":
-        """Return the checkout at :attr:`base_path` with all files restored, or None."""
+    def _open_repo(self) -> "git.Repo | None":
+        """Return the repository at :attr:`base_path`, or None if it is not usable."""
         import git
 
         try:
             repo = git.Repo(self.base_path)
             repo.head.commit  # Raises ValueError if there are no commits
-            if repo.is_dirty():
-                log.info(f"Restore files in {self.base_path}")
-                repo.git.reset("--hard", "HEAD")
             return repo
         except (
             git.InvalidGitRepositoryError,
@@ -218,23 +240,38 @@ class SpecimenCollection:
         ):
             return None
 
-    def _clone(self) -> None:
-        """Replace :attr:`base_path` with a new shallow clone of :data:`REMOTE_URL`."""
+    def _clone(self, managed: bool) -> None:
+        """Replace :attr:`base_path` with a new shallow clone of :data:`REMOTE_URL`.
+
+        The clone is made next to :attr:`base_path` and moved into place only when
+        complete, so a failure leaves :attr:`base_path` as it was.
+        """
         import git
 
         path = self.base_path
-        if path.exists():
-            if not path.joinpath(".git").exists() and any(path.iterdir()):
-                raise FileExistsError(f"{path} exists and is not a Git repository")
-            # Git makes its object files read-only, which prevents deleting them on
-            # Windows
-            for root, dirs, files in os.walk(path):
-                for name in dirs + files:
-                    os.chmod(os.path.join(root, name), stat.S_IRWXU)
-            shutil.rmtree(path)
+        if not managed and path.exists() and any(path.iterdir()):
+            raise FileExistsError(
+                f"{path} exists but is not a usable sdmx-test-data checkout. sdmx does "
+                "not change directories it does not manage. Repair the repository, "
+                "empty or remove the directory, or point --sdmx-test-data / "
+                "SDMX_TEST_DATA elsewhere"
+            )
 
         log.info(f"Clone test data from {REMOTE_URL} → {path}")
-        git.Repo.clone_from(REMOTE_URL, path, depth=1, branch="main").close()
+        staging = Path(tempfile.mkdtemp(prefix=f"{path.name}.", dir=path.parent))
+        new, old = staging / "checkout", staging / "previous"
+        try:
+            git.Repo.clone_from(REMOTE_URL, new, depth=1, branch="main").close()
+            if path.exists():
+                path.rename(old)
+            new.rename(path)
+        except BaseException:
+            if old.exists():
+                old.rename(path)
+            _rmtree(staging)
+            raise
+        else:
+            _rmtree(staging)
 
     def parametrize(self, metafunc) -> None:
         """Handle the ``parametrize_specimens`` mark for a specific test."""
