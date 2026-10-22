@@ -102,6 +102,7 @@ def test_ensure_schemas_rebuilds_incomplete(tmp_path, missing):
         # Valid ZIP metadata, but a member with a wrong CRC
         zipball().replace(b"<xs:schema/>", b"<xs:broken/>"),
     ],
+    ids=["not-zip", "bad-crc"],  # Bytes contain timestamps: unstable IDs under xdist
 )
 def test_ensure_schemas_corrupt_download(tmp_path, data):
     """A corrupt archive publishes nothing and leaves a complete entry untouched."""
