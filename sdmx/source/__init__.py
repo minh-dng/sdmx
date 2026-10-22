@@ -172,12 +172,12 @@ class Source:
         which it edits in place. It is not called for queries to a complete URL.
 
         A source should only fill what the caller left out, for instance with
-        :py:`request.headers.setdefault(…)`. After the hook, :meth:`.Client.get`
+        ``request.headers.setdefault()``. After the hook, :meth:`.Client.get`
         supplies, for what is still missing: the :attr:`structure_agency`; an
         ``Accept`` header for structure-specific data, if a DSD is given; and the
         :attr:`headers`.
 
-        The default implementation does nothing. See :meth:`.abs.Source.modify_request`
+        The default implementation does nothing. See ``sdmx.source.abs.Source.modify_request``
         for an example override.
         """
 
@@ -191,7 +191,7 @@ class Source:
         behaviour of the service itself, such as error pages or archives.
 
         See :meth:`.estat.Source.handle_response` and
-        :meth:`.abs.Source.handle_response` for example implementations.
+        ``sdmx.source.abs.Source.handle_response`` for example implementations.
         """
         return response, content
 
