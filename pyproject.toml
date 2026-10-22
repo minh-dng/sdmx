@@ -43,7 +43,6 @@ dependencies = [
 cache = ["requests-cache"]
 docs = ["furo", "IPython", "sphinx >= 8"]
 tests = [
-  "filelock",
   "GitPython",
   "Jinja2",
   "pytest >= 9",

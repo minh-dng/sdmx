@@ -1,6 +1,5 @@
 import logging
 import os
-import re
 from collections import ChainMap
 from collections.abc import Generator, Iterator
 from copy import deepcopy
@@ -10,8 +9,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 import pytest
-import responses
-from filelock import FileLock
 from xdist import is_xdist_worker
 
 from sdmx.exceptions import HTTPError
@@ -259,49 +256,19 @@ class MessageTest:
 
 
 @pytest.fixture(scope="session")
-def installed_schemas(
-    worker_id: str,
-    mock_gh_api: responses.RequestsMock,
-    tmp_path_factory: pytest.TempPathFactory,
-) -> Iterator[Path]:
-    """Fixture that ensures schemas are installed locally in a temporary directory."""
-    import platformdirs
+def installed_schemas(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """Fixture that ensures schemas are installed locally in a temporary directory.
 
+    Workers sharing the user cache need no coordination: :func:`.ensure_schemas`
+    publishes each cache entry atomically.
+    """
     from sdmx.format.xml.common import install_schemas
 
     dir = tmp_path_factory.mktemp("schemas")
-
-    # Keep installation serialized across workers sharing the user cache.
-    lock = platformdirs.user_cache_path("sdmx", ensure_exists=True) / "schemas.lock"
-    with mock_gh_api, FileLock(lock):
-        install_schemas(dir.joinpath("2.1"), Version["2.1"])
-        install_schemas(dir.joinpath("3.0.0"), Version["3.0.0"])
+    install_schemas(dir.joinpath("2.1"), Version["2.1"])
+    install_schemas(dir.joinpath("3.0.0"), Version["3.0.0"])
 
     yield dir
-
-
-@pytest.fixture(scope="session")
-def mock_gh_api() -> Iterator[responses.RequestsMock]:
-    """Mock GitHub API responses to avoid hitting rate limits.
-
-    For each API endpoint URL queried by :func:.`_gh_zipball`, return a pared-down JSON
-    response that contains the required "zipball_url" key.
-    """
-    base = "https://api.github.com/repos/sdmx-twg/sdmx-ml"
-
-    # TODO Improve .util.requests to provide (roughly) the same functionality, then drop
-    # use of responses here
-    mock = responses.RequestsMock(assert_all_requests_are_fired=False)
-    mock.add_passthru(re.compile(rf"{base}/zipball/\w+"))
-    mock.add_passthru(re.compile(r"https://codeload.github.com/\w+"))
-
-    for v in "2.1", "3.0", "3.0.0":
-        mock.get(
-            url=f"{base}/releases/tags/v{v}",
-            json=dict(zipball_url=f"{base}/zipball/v{v}"),
-        )
-
-    yield mock
 
 
 @pytest.fixture(scope="session")
