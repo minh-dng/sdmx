@@ -203,13 +203,12 @@ class SpecimenCollection:
         lock = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
         lock._obtain_lock()
         try:
-            if not (repo := self._open_repo()):
+            if not (inspected := self._inspect()):
                 self._clone(managed)
                 return
 
+            repo, dirty = inspected
             with repo:
-                # Without an index, Git cannot tell which files are changed
-                dirty = not Path(repo.git_dir, "index").exists() or repo.is_dirty()
                 if not managed and (dirty or refresh):
                     raise RuntimeError(
                         f"{self.base_path} is not managed by sdmx and "
@@ -227,20 +226,21 @@ class SpecimenCollection:
         finally:
             lock._release_lock()
 
-    def _open_repo(self) -> "git.Repo | None":
-        """Return the repository at :attr:`base_path`, or None if it is not usable."""
+    def _inspect(self) -> "tuple[git.Repo, bool] | None":
+        """Return the repository at :attr:`base_path` and whether it has changes.
+
+        Return :any:`None` if the repository is not usable: any failure to read it,
+        such as a missing commit or a truncated index, counts.
+        """
         import git
 
         try:
             repo = git.Repo(self.base_path)
             repo.head.commit  # Raises ValueError if there are no commits
-            return repo
-        except (
-            git.InvalidGitRepositoryError,
-            git.NoSuchPathError,
-            git.GitCommandError,
-            ValueError,
-        ):
+            # Without an index, Git cannot tell which files are changed
+            dirty = not Path(repo.git_dir, "index").exists() or repo.is_dirty()
+            return repo, dirty
+        except Exception:
             return None
 
     def _clone(self, managed: bool) -> None:

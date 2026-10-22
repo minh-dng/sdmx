@@ -224,3 +224,29 @@ def test_specimen_collection_fetch_custom_directory_filled_during_clone(
 
     assert (custom / "mine.txt").read_text() == "keep"
     assert [p.name for p in tmp_path.glob("custom.*")] == []
+
+
+def test_specimen_collection_fetch_corrupt_index(remote, checkout) -> None:
+    """A managed checkout with a truncated index is cloned again."""
+    data.SpecimenCollection(checkout, fetch=True)
+    index = checkout / ".git" / "index"
+    index.write_bytes(index.read_bytes()[:20])
+    (checkout / "specimen.xml").unlink()
+
+    data.SpecimenCollection(checkout, fetch=True)
+
+    assert (checkout / "specimen.xml").read_text() == "original"
+
+
+def test_specimen_collection_fetch_custom_corrupt_index(tmp_path, remote) -> None:
+    """A custom checkout with a truncated index is not changed."""
+    custom = tmp_path / "custom"
+    data.SpecimenCollection(custom, fetch=True)
+    index = custom / ".git" / "index"
+    index.write_bytes(index.read_bytes()[:20])
+    (custom / "specimen.xml").unlink()
+
+    with pytest.raises(FileExistsError, match="does not change"):
+        data.SpecimenCollection(custom, fetch=True)
+
+    assert not (custom / "specimen.xml").exists()
