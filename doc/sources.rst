@@ -240,7 +240,7 @@ Website `1 <https://wikis.ec.europa.eu/pages/viewpage.action?pageId=40708145>`__
 .. automodule:: sdmx.source.estat
    :members: Source, handle_references_param
 
-``ESTAT3`` uses the agency ID ``ESTAT`` for structure queries by default (:attr:`~.Source.structure_agency`).
+``ESTAT3`` uses the agency ID ``ESTAT`` for structure and data queries by default (:attr:`~.Source.default_agency`).
 
 .. _ESTAT_COMEXT:
 
@@ -248,7 +248,7 @@ Website `1 <https://wikis.ec.europa.eu/pages/viewpage.action?pageId=40708145>`__
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - The :class:`.Agency` ID for data is still ``ESTAT``.
-  Structure queries use it by default (:attr:`~.Source.structure_agency`).
+  Structure queries use it by default (:attr:`~.Source.default_agency`).
 
 .. _COMP:
 .. _EMPL:
@@ -414,7 +414,7 @@ Website `(en) <https://www.insee.fr/en/information/2868055>`__,
 
 - Structure queries use the agency ID ``ALL`` by default, because the service does not accept ``INSEE``; see :issue:`21`.
   Data queries are not affected.
-  This is the :attr:`~.Source.structure_agency` of the source.
+  This is the :attr:`~.Source.default_agency` of the source.
 
 
 .. _ISTAT:
@@ -495,7 +495,7 @@ Documentation `1 <https://gitlab.algobank.oecd.org/public-documentation/dotstat-
 - This source implements the SDMX-REST 1.x API and serves SDMX-ML 2.1 and SDMX-JSON 1.0.0.
 - The structures and data flows use a variety of agency IDs, for example “OECD.SDD.TPS”, to identify the organizational unit within the OECD that is responsible for each object.
   Queries for structures with the agency ID “OECD” may return few or zero results.
-  :mod:`sdmx` uses the agency ID ``ALL`` by default; see :attr:`~.Source.structure_agency`.
+  :mod:`sdmx` uses the agency ID ``ALL`` by default; see :attr:`~.Source.default_agency`.
 - The OECD website `describes an older SDMX-ML API <https://data.oecd.org/api/sdmx-ml-documentation/>`__,
   but this is an implementation of SDMX 2.0,
   which is not supported by :mod:`sdmx` (see :ref:`sdmx-version-policy`).
@@ -729,7 +729,7 @@ For built-in subclasses of Source used to provide :mod:`sdmx`'s built-in support
    Instead, use :func:`.add_source`, and then create a new :class:`.Client` with the corresponding source ID.
 
 :meth:`.Client.get` describes each query with a :class:`.RequestSpec`.
-It passes the description to :meth:`.Source.modify_request`, then fills in the :attr:`~.Source.structure_agency` and :attr:`~.Source.headers` of the source for what is still missing, and builds the URL.
+It passes the description to :meth:`.Source.modify_request`, then fills in the :attr:`~.Source.default_agency` and :attr:`~.Source.headers` of the source for what is still missing, and builds the URL.
 Arguments that only a hook of the source uses are listed in :attr:`.Source.hook_options`; they reach the hooks in :attr:`.RequestSpec.options` and never reach the URL.
 
 .. automodule:: sdmx.source

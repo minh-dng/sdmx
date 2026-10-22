@@ -6,6 +6,7 @@ from warnings import warn
 import requests
 from requests.structures import CaseInsensitiveDict
 
+from sdmx.format import Version
 from sdmx.model import common
 from sdmx.model.v21 import DataStructureDefinition
 from sdmx.reader import get_first_reader
@@ -248,11 +249,12 @@ class Client:
         """Complete `request` with defaults of the source and prepare a request."""
         assert request.resource_type is not None
         rt = request.resource_type
-        if request.agency_id is None and rt not in (
-            Resource.data,
-            Resource.availableconstraint,
-        ):
-            request.agency_id = self.source.structure_agency
+        # SDMX-REST 2.1 data and availability URLs have no agency; 3.0.0 ones do
+        in_url = rt not in (Resource.data, Resource.availableconstraint) or (
+            Version["2.1"] not in self.source.versions
+        )
+        if request.agency_id is None and in_url:
+            request.agency_id = self.source.default_agency
 
         if request.structure_specific:
             request.headers.setdefault("Accept", STRUCTURE_SPECIFIC_DATA)
@@ -450,8 +452,9 @@ class Client:
         ----------------
         agency_id : str
             ID of the agency that maintains the resource. Default: the
-            :attr:`~.Source.structure_agency` of the :attr:`source` for structure
-            queries, or otherwise the ID of the :attr:`source`.
+            :attr:`~.Source.default_agency` of the :attr:`source`, or otherwise the ID
+            of the :attr:`source`. SDMX-REST 2.1 data and availability URLs have no
+            agency.
 
             An SDMX web service is a ‘data source’ operated by a specific, ‘source’
             agency. A web service may host data or metadata originally published by one

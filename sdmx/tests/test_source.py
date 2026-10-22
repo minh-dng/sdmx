@@ -198,7 +198,7 @@ DSD = model.DataStructureDefinition()
 
 #: (source ID, args to Client.get, kwargs to Client.get, URL after Source.url, Accept)
 REQUESTS = [
-    # Default agency for structure queries, from Source.structure_agency
+    # Default agency, from Source.default_agency
     ("INSEE", ("codelist", "CL"), {}, "/codelist/ALL/CL/latest", "*/*"),
     ("ISTAT", ("dataflow",), {}, "/dataflow/all/all/latest", "*/*"),
     ("OECD", ("dataflow",), {}, "/dataflow/ALL/all/latest", "*/*"),
@@ -207,9 +207,15 @@ REQUESTS = [
     ("WB", ("dataflow",), {}, "/dataflow/WBG_WITS/all/latest", "*/*"),
     ("ESTAT_COMEXT", ("codelist", "CL"), {}, "/codelist/ESTAT/CL/latest", "*/*"),
     ("ESTAT3", ("codelist", "CL"), {}, "/structure/codelist/ESTAT/CL/+", "*/*"),
-    # …but not for data queries, with or without a key
-    ("OECD3", ("data", "DF"), {}, "/data/*/OECD3/DF/+", "*/*"),
-    ("ESTAT3", ("data", "DF"), dict(key="A.B"), "/data/*/ESTAT3/DF/+/A.B", "*/*"),
+    # …for SDMX-REST 3.0.0 data queries, with or without a key
+    ("OECD3", ("data", "DF"), {}, "/data/*/*/DF/+", "*/*"),
+    ("ESTAT3", ("data", "DF"), {}, "/data/*/ESTAT/DF/+", "*/*"),
+    ("ESTAT3", ("data", "DF"), dict(key="A.B"), "/data/*/ESTAT/DF/+/A.B", "*/*"),
+    ("ESTAT3", ("data", "DF"), dict(version="1.0"), "/data/*/ESTAT/DF/1.0", "*/*"),
+    ("SGR3", ("data", "DF"), dict(key="A"), "/data/*/all/DF/+/A", "*/*"),
+    ("IMF_DATA3", ("data", "DF"), {}, "/data/*/all/DF/+", IMF3),
+    # …but not for SDMX-REST 2.1 data queries, which have no agency
+    ("OECD", ("data", "DF"), {}, "/data/DF", "*/*"),
     # …and the caller's agency_id is kept
     ("INSEE", ("codelist", "CL"), dict(agency_id="X"), "/codelist/X/CL/latest", "*/*"),
     # Default headers by resource type, from Source.headers

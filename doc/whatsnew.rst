@@ -23,10 +23,12 @@ Breaking changes
   Arguments to :meth:`.Client.get` that only a hook uses, such as :py:`get_footer_url=` for :ref:`ESTAT` and :py:`format=` for :ref:`ABS`, are listed in :attr:`sdmx.source.Source.hook_options`.
 - Remove the :py:`provider=` argument to :meth:`.Client.get`; use :py:`agency_id=`.
   For a data query, :py:`provider=` now names the data provider in the URL, as in the SDMX-REST standard.
-- Add the attribute :attr:`sdmx.source.Source.structure_agency`, and the key ``"*"`` for all resource types in :attr:`sdmx.source.Source.headers`.
+- Add the attribute :attr:`sdmx.source.Source.default_agency` (key ``"default_agency"`` in :file:`sources.json`), and the key ``"*"`` for all resource types in :attr:`sdmx.source.Source.headers`.
   The classes for :ref:`INSEE`, :ref:`ISTAT`, :ref:`OECD`, :ref:`OECD3`, :ref:`WB`, :ref:`SGR`, ``SGR3``, ``IMF_DATA`` and ``IMF_DATA3`` are removed; their differences are in :file:`sources.json`.
-  The default agency applies to structure queries only, so these data queries change:
-  key-less data queries to ``ESTAT3``, ``IMF_DATA3`` and ``OECD3``, and all data queries to ``SGR3``, now use the ID of the source as the agency.
+  The default agency applies to structure queries and to SDMX-REST 3.0.0 data queries.
+  Under 2.1 the data URL has no agency.
+  Data queries to ``ESTAT3`` (``ESTAT``), ``IMF_DATA3`` and ``SGR3`` (``all``), and ``OECD3`` (``*``) use these agencies whether or not the query has a key.
+  Before, a data query with a key used the ID of the source, which the services do not accept.
 - Choose the reader for a response by its ``content-type`` header, then by its content, as :func:`sdmx.read_sdmx` does (new :func:`.get_first_reader`).
   The :py:`handle_response` hooks of ``SGR`` and ``LSD`` are removed.
   :meth:`sdmx.source.Source.handle_response` is called for every response, not only for those that cannot be parsed.

@@ -60,7 +60,7 @@ class Source:
     source/web service.
 
     Simple differences between services are data, given as attributes: :attr:`headers`,
-    :attr:`structure_agency`, :attr:`supports`. For other differences, the class has
+    :attr:`default_agency`, :attr:`supports`. For other differences, the class has
     three hooks with default implementations. Subclasses may override the hooks in order
     to handle specific features of different REST web services:
 
@@ -89,9 +89,11 @@ class Source:
     #: replace these, one by one.
     headers: dict[str, Any] = field(default_factory=dict)
 
-    #: ID of the agency to use in queries for structures (everything but data), if the
-    #: caller gives none. Default: the :attr:`id` of the source.
-    structure_agency: str | None = None
+    #: ID of the agency to use in queries if the caller gives none, when the URL has an
+    #: agency: for structures, and for data and availability under SDMX-REST 3.0.0. Set
+    #: it whenever the :attr:`id` of the source is not an agency the service accepts.
+    #: Default: the :attr:`id` of the source.
+    default_agency: str | None = None
 
     #: :class:`.DataContentType` indicating the type of data returned by the source.
     data_content_type: DataContentType = DataContentType.XML
@@ -173,7 +175,7 @@ class Source:
 
         A source should only fill what the caller left out, for instance with
         ``request.headers.setdefault()``. After the hook, :meth:`.Client.get`
-        supplies, for what is still missing: the :attr:`structure_agency`; an
+        supplies, for what is still missing: the :attr:`default_agency`; an
         ``Accept`` header for structure-specific data, if a DSD is given; and the
         :attr:`headers`.
 
