@@ -30,6 +30,22 @@ def test_deprecated_request(caplog) -> None:
     assert caplog.record_tuples == [("sdmx.client", logging.WARNING, message)]
 
 
+@pytest.mark.parametrize("source", ["ECB", "ESTAT3"])
+@pytest.mark.parametrize("provider", ["ECB", None])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        dict(resource_type="data", resource_id="FLOW"),
+        dict(url="https://example.com/sdmx"),
+    ],
+    ids=["resource", "url"],
+)
+def test_provider_rejected(source, provider, kwargs) -> None:
+    """`provider` is rejected for both resource and complete-URL requests."""
+    with pytest.raises(TypeError, match="use agency_id"):
+        sdmx.Client(source).get(provider=provider, dry_run=True, **kwargs)
+
+
 def test_read_sdmx(tmp_path: "Path", specimen: "SpecimenCollection") -> None:
     # Copy the file to a temporary file with an urecognizable suffix
     target = tmp_path / "foo.badsuffix"

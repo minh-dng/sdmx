@@ -303,6 +303,9 @@ class Client:
         return requests.Request("get", url, params=parameters, headers=headers)
 
     def _handle_get_kwargs(self, kwargs) -> tuple[dict, dict]:  # noqa: C901 TODO reduce complexity 12 → ≤10
+        if "provider" in kwargs:
+            raise TypeError("provider= was removed in 3.0.0; use agency_id=")
+
         if kwargs.pop("validate", None) is not None:
             warn("validate= keyword argument to Client.get()", DeprecationWarning)
 

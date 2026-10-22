@@ -22,7 +22,7 @@ Breaking changes
   :meth:`sdmx.source.Source.finish_message` now has the signature :py:`finish_message(message, client, request)`; `request` is the :class:`.RequestSpec`, instead of keyword arguments.
   Arguments to :meth:`.Client.get` that only a hook uses, such as :py:`get_footer_url=` for :ref:`ESTAT` and :py:`format=` for :ref:`ABS`, are listed in :attr:`sdmx.source.Source.hook_options`.
 - Remove the :py:`provider=` argument to :meth:`.Client.get`; use :py:`agency_id=`.
-  For a data query, :py:`provider=` now names the data provider in the URL, as in the SDMX-REST standard.
+  Giving :py:`provider=` raises :class:`TypeError`.
 - Add the attribute :attr:`sdmx.source.Source.default_agency` (key ``"default_agency"`` in :file:`sources.json`), and the key ``"*"`` for all resource types in :attr:`sdmx.source.Source.headers`.
   The classes for :ref:`INSEE`, :ref:`ISTAT`, :ref:`OECD`, :ref:`OECD3`, :ref:`WB`, :ref:`SGR`, ``SGR3``, ``IMF_DATA`` and ``IMF_DATA3`` are removed; their differences are in :file:`sources.json`.
   The default agency applies to structure queries and to SDMX-REST 3.0.0 data queries.
