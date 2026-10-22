@@ -187,22 +187,33 @@ class SpecimenCollection:
         - With `refresh`, whatever the state: fetch the latest ``main`` from
           :data:`REMOTE_URL` and check it out.
 
-        Any other path, including a symbolic link at :data:`DEFAULT_DIR`, is the user's.
-        It is cloned into only if missing or empty. If it
-        is not a clean, usable checkout, or if `refresh` is given, sdmx changes nothing
-        and raises :class:`FileExistsError` (not a usable checkout) or
+        Any other path is the user's. So is :data:`DEFAULT_DIR` if a symbolic link
+        leads to it or to its checkout: a link in its path, a ``.git`` that is a link or
+        file, or a ``core.worktree`` setting. Such a path is cloned into only if missing
+        or empty. If it is not a clean, usable checkout, or if `refresh` is given, sdmx
+        changes nothing and raises :class:`FileExistsError` (not a usable checkout) or
         :class:`RuntimeError` (local changes, or `refresh`).
         """
         import git
 
-        # A symbolic link leads to a directory that may belong to the user
-        managed = self.base_path == DEFAULT_DIR and not DEFAULT_DIR.is_symlink()
+        # Symbolic links lead to files that may belong to the user
+        git_dir = self.base_path.joinpath(".git")
+        managed = (
+            self.base_path == DEFAULT_DIR
+            and DEFAULT_DIR.resolve() == DEFAULT_DIR.absolute()
+            and not (git_dir.is_symlink() or git_dir.is_file())
+        )
         self.base_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Lock to avoid concurrency issues when running with pytest-xdist
         lock = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
         lock._obtain_lock()
         try:
+            if managed:
+                with git.GitConfigParser(
+                    [git_dir / "config", git_dir / "config.worktree"], read_only=True
+                ) as config:
+                    managed = not config.has_option("core", "worktree")
             if not (inspected := self._inspect()):
                 self._clone(managed)
                 return

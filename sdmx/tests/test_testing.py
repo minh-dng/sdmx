@@ -205,6 +205,65 @@ def test_specimen_collection_fetch_symlinked_default(
     assert (user / "specimen.xml").read_text() == "my edit"
 
 
+def test_specimen_collection_fetch_symlinked_parent(
+    tmp_path, remote, monkeypatch
+) -> None:
+    """A symbolic link in the path of the default location leads to the user's files."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user / "test-data", fetch=True)
+    (user / "test-data" / "specimen.xml").write_text("my edit")
+    (tmp_path / "link").symlink_to(user, target_is_directory=True)
+    linked = tmp_path / "link" / "test-data"
+    monkeypatch.setattr(data, "DEFAULT_DIR", linked)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(linked, fetch=True)
+
+    assert (user / "test-data" / "specimen.xml").read_text() == "my edit"
+
+
+def test_specimen_collection_fetch_symlinked_git_directory(
+    tmp_path, remote, checkout
+) -> None:
+    """A ``.git`` that is a symbolic link leads to a repository sdmx does not own."""
+    user = tmp_path / "user"
+    data.SpecimenCollection(user, fetch=True)
+    checkout.mkdir()
+    (checkout / ".git").symlink_to(user / ".git", target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="has local changes"):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert not (checkout / "specimen.xml").exists()
+
+
+@pytest.mark.parametrize("damaged", [False, True])
+@pytest.mark.parametrize("worktree_config", [False, True])
+def test_specimen_collection_fetch_core_worktree(
+    tmp_path, remote, checkout, damaged, worktree_config
+) -> None:
+    """A repository whose work tree is elsewhere is not reset."""
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "specimen.xml").write_text("my edit")
+    data.SpecimenCollection(checkout, fetch=True)
+    with git.Repo(checkout) as repo:
+        if worktree_config:
+            repo.git.config("extensions.worktreeConfig", "true")
+            repo.git.config("--worktree", "core.worktree", str(user))
+        else:
+            repo.git.config("core.worktree", str(user))
+    if damaged:
+        (checkout / ".git" / "index").write_bytes(b"corrupt")
+    (checkout / "mine.txt").write_text("keep")
+
+    with pytest.raises(FileExistsError if damaged else RuntimeError):
+        data.SpecimenCollection(checkout, fetch=True)
+
+    assert (user / "specimen.xml").read_text() == "my edit"
+    assert (checkout / "mine.txt").read_text() == "keep"
+
+
 def test_specimen_collection_fetch_custom_directory_filled_during_clone(
     tmp_path, remote, monkeypatch
 ) -> None:
