@@ -44,7 +44,9 @@ def checkout(tmp_path, monkeypatch) -> Path:
     return path
 
 
-@pytest.mark.parametrize("state", ["missing", "clean", "deleted", "modified"])
+@pytest.mark.parametrize(
+    "state", ["missing", "clean", "deleted", "modified", "no-index"]
+)
 def test_specimen_collection_fetch(
     tmp_path, monkeypatch, remote, checkout, state
 ) -> None:
@@ -53,6 +55,9 @@ def test_specimen_collection_fetch(
     if state != "missing":
         data.SpecimenCollection(checkout, fetch=True)
         if state == "deleted":
+            specimen.unlink()
+        elif state == "no-index":
+            (checkout / ".git" / "index").unlink()
             specimen.unlink()
         elif state == "modified":
             specimen.write_text("changed")

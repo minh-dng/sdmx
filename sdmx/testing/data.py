@@ -206,7 +206,8 @@ class SpecimenCollection:
                 return
 
             with repo:
-                dirty = repo.is_dirty()
+                # Without an index, Git cannot tell which files are changed
+                dirty = not Path(repo.git_dir, "index").exists() or repo.is_dirty()
                 if not managed and (dirty or refresh):
                     raise RuntimeError(
                         f"{self.base_path} is not managed by sdmx and "
