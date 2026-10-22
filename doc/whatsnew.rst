@@ -37,6 +37,8 @@ Breaking changes
   The fixture ``mock_gh_api`` and the dependency on ``filelock`` for the test suite are removed.
 - :class:`.SpecimenCollection` clones, repairs, and (with the new option :program:`--sdmx-refresh-data`) updates the checkout of sdmx-test-data.
   :program:`--sdmx-fetch-data` no longer updates a checkout that is complete.
+  Only the default location is repaired, and a replacement clone is made before the old directory is removed.
+  A directory given with :program:`--sdmx-test-data` or ``SDMX_TEST_DATA`` is cloned into only if it is missing or empty; sdmx never deletes or resets it, and raises an error if it is not a clean checkout.
   The CI workflow no longer repairs the checkout itself.
 - Move :class:`.DataSourceTest` from ``sdmx.tests.test_sources`` to :mod:`sdmx.testing`.
   :attr:`sdmx.source.Source.supports` for sources that do not return SDMX-ML is :any:`False` for all but data; it was :any:`True` for metadata.
