@@ -8,7 +8,7 @@ from requests.structures import CaseInsensitiveDict
 
 from sdmx.model import common
 from sdmx.model.v21 import DataStructureDefinition
-from sdmx.reader import get_reader
+from sdmx.reader import get_first_reader
 from sdmx.rest import Resource
 from sdmx.rest.common import RequestSpec
 from sdmx.session import DEFAULT_TIMEOUT, ResponseIO, Session
@@ -563,9 +563,9 @@ class Client:
             response, response_content
         )
 
-        # Select reader class
+        # Select reader class: by the content-type header, then by the content
         try:
-            Reader = get_reader(response)
+            Reader = get_first_reader((response, response_content))
         except ValueError:
             raise ValueError(
                 "can't determine a reader for response content type "

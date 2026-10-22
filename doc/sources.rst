@@ -446,7 +446,8 @@ SDMX-ML —
 `Website <https://osp.stat.gov.lt/rdb-rest>`__
 
 - Lithuanian name: Lietuvos statistikos.
-- This web service returns the non-standard HTTP content-type "application/force-download"; :mod:`sdmx` replaces it with "application/xml".
+- This web service returns the non-standard HTTP content-type "application/force-download".
+  :mod:`sdmx` identifies the format from the content.
 
 
 .. _NB:
@@ -539,8 +540,8 @@ SDMX-JSON
 SDMX-ML —
 `Website <https://registry.sdmx.org/overview.html>`__
 
-.. autoclass:: sdmx.source.sgr.Source()
-   :members:
+- This web service does not give a content-type for some responses.
+  :mod:`sdmx` identifies the format from the content.
 
 
 .. _SPC:

@@ -121,7 +121,7 @@ class Source(BaseSource):
         contained XML file.
         """
 
-        if response.headers["content-type"] != "application/octet-stream":
+        if response.headers.get("content-type") != "application/octet-stream":
             return response, content
 
         # Read all the input, forcing it to be copied to

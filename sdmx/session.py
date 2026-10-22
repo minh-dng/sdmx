@@ -119,6 +119,15 @@ class ResponseIO(BufferedIOBase):
     def readable(self):
         return True
 
+    def seekable(self):
+        return True
+
+    def tell(self):
+        return self.tee.tell()
+
+    def seek(self, offset, whence=0):
+        return self.tee.seek(offset, whence)
+
     def read(self, size=-1):
         """Read and return up to `size` bytes by calling ``self.tee.read()``."""
         return self.tee.read(size)
