@@ -55,6 +55,7 @@ Other changes
   Before, any header from the caller removed the ``Accept`` header of the source.
 - Fix: a :py:`dsd=` argument with a :class:`str` key is passed to the reader.
 - Fix: :ref:`BBK` no longer changes the shared :attr:`sdmx.source.Source.url` for each request.
+- Fix: sniffing the content of a response or stream skips a UTF-8 byte order mark.
 - Fix: :func:`.validate_xml` does not create directories.
 - Fix: each schema cache entry is published once and complete.
   An entry that lacks any XSD document recorded when it was built (file :file:`sdmx-schemas.txt`) is rebuilt.

@@ -358,13 +358,13 @@ def test_read_url1() -> None:
 def stored_xml_client():
     """A Client whose session returns a stored SDMX-ML message with the given headers."""
 
-    def _make(headers: dict[str, str]) -> "Client":
+    def _make(headers: dict[str, str], prefix: bytes = b"") -> "Client":
         client = sdmx.Client("ECB", backend="memory")
         save_response(
             client.session,
             "GET",
             "https://example.com/structure",
-            sdmx.to_xml(sdmx.message.StructureMessage()),
+            prefix + sdmx.to_xml(sdmx.message.StructureMessage()),
             headers,
         )
         return client
@@ -384,6 +384,18 @@ def stored_xml_client():
 def test_get_reader_from_content(stored_xml_client, headers) -> None:
     """Without an SDMX content-type, the reader is chosen by the content."""
     client = stored_xml_client(headers)
+
+    msg = client.get(url="https://example.com/structure")
+
+    assert isinstance(msg, sdmx.message.StructureMessage)
+
+
+@pytest.mark.parametrize(
+    "headers", [{}, {"Content-Type": "application/force-download"}]
+)
+def test_get_reader_from_content_bom(stored_xml_client, headers) -> None:
+    """A UTF-8 byte order mark before the content does not hide the format."""
+    client = stored_xml_client(headers, b"\xef\xbb\xbf")
 
     msg = client.get(url="https://example.com/structure")
 
