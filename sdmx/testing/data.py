@@ -1,6 +1,9 @@
 """Code for working with :file:`sdmx-test-data`."""
 
 import logging
+import os
+import shutil
+import stat
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -9,6 +12,7 @@ import platformdirs
 import pytest
 
 if TYPE_CHECKING:
+    import git
     import pandas
     from _pytest.mark.structures import ParameterSet
 
@@ -59,7 +63,9 @@ class SpecimenCollection:
     path :
        Path containing :file:`sdmx-test-data`, or to which to clone the repository.
     fetch :
-       If :any:`True`, call :meth:`fetch`
+       If :any:`True`, call :meth:`fetch`.
+    refresh :
+       Passed to :meth:`fetch`.
     """
 
     #: Base path containing the specimen collection.
@@ -72,11 +78,11 @@ class SpecimenCollection:
     #: 3. Message type: either "data", "structure", or None.
     specimens: list[tuple[Path, str, str | None]]
 
-    def __init__(self, path: Path, fetch: bool):
+    def __init__(self, path: Path, fetch: bool, refresh: bool = False):
         self.base_path = path
 
-        if fetch:
-            self.fetch()
+        if fetch or refresh:
+            self.fetch(refresh)
 
         # Check the base directory exists
         if not self.base_path.exists():  # pragma: no cover
@@ -158,49 +164,77 @@ class SpecimenCollection:
 
         return result
 
-    def fetch(self) -> None:
-        """Fetch test data from GitHub."""
+    def fetch(self, refresh: bool = False) -> None:
+        """Make :attr:`base_path` a usable checkout of sdmx-test-data.
+
+        The checkout is in one of four states, each handled without help from the
+        caller:
+
+        - Missing, or a Git repository too damaged to use: clone it.
+        - Clean: leave it alone. No network access occurs.
+        - Files deleted or modified: restore them from the local repository. No network
+          access occurs.
+        - With `refresh`, whatever the state: fetch the latest ``main`` from
+          :data:`REMOTE_URL` and check it out.
+
+        An existing, non-empty directory that is not a Git repository is never
+        overwritten; :class:`FileExistsError` is raised.
+        """
         import git
 
-        # Create a lock to avoid concurrency issues when running with pytest-xdist
-        self.base_path.mkdir(parents=True, exist_ok=True)
-        blf = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
-        blf._obtain_lock()
+        self.base_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Lock to avoid concurrency issues when running with pytest-xdist
+        lock = git.BlockingLockFile(self.base_path, check_interval_s=0.1)
+        lock._obtain_lock()
+        try:
+            if repo := self._usable_repo():
+                with repo:
+                    if refresh:
+                        log.info(f"Fetch test data from {REMOTE_URL}")
+                        repo.remotes["origin"].fetch("refs/heads/main", depth=1)
+                        repo.git.reset("--hard", "FETCH_HEAD")
+            else:
+                self._clone()
+        finally:
+            lock._release_lock()
+
+    def _usable_repo(self) -> "git.Repo | None":
+        """Return the checkout at :attr:`base_path` with all files restored, or None."""
+        import git
 
         try:
-            # Close GitPython's cached processes after fetching; on Windows, open Git
-            # handles otherwise prevent removing an incomplete CI checkout.
-            with git.Repo.init(self.base_path) as repo:
-                try:
-                    # Reference to existing 'origin' remote
-                    origin = repo.remotes["origin"]
-                    # Ensure the REMOTE_URL is among the URLs for this remote
-                    if REMOTE_URL not in origin.urls:  # pragma: no cover
-                        origin.set_url(REMOTE_URL)
-                except IndexError:
-                    # Create a new remote
-                    origin = repo.create_remote("origin", REMOTE_URL)
+            repo = git.Repo(self.base_path)
+            repo.head.commit  # Raises ValueError if there are no commits
+            if repo.is_dirty():
+                log.info(f"Restore files in {self.base_path}")
+                repo.git.reset("--hard", "HEAD")
+            return repo
+        except (
+            git.InvalidGitRepositoryError,
+            git.NoSuchPathError,
+            git.GitCommandError,
+            ValueError,
+        ):
+            return None
 
-                log.info(f"Fetch test data from {origin} → {repo.working_dir}")
+    def _clone(self) -> None:
+        """Replace :attr:`base_path` with a new shallow clone of :data:`REMOTE_URL`."""
+        import git
 
-                # Fetch only 1 commit from the remote
-                origin.fetch("refs/heads/main", depth=1)
-                origin_main = origin.refs["main"]  # Reference to 'origin/main'
-                try:
-                    head = repo.heads["main"]  # Reference to existing local 'main'
-                except IndexError:
-                    # Create a local 'main'
-                    head = repo.create_head("main", origin_main)
+        path = self.base_path
+        if path.exists():
+            if not path.joinpath(".git").exists() and any(path.iterdir()):
+                raise FileExistsError(f"{path} exists and is not a Git repository")
+            # Git makes its object files read-only, which prevents deleting them on
+            # Windows
+            for root, dirs, files in os.walk(path):
+                for name in dirs + files:
+                    os.chmod(os.path.join(root, name), stat.S_IRWXU)
+            shutil.rmtree(path)
 
-                if (
-                    head.commit != origin_main.commit  # Commit differs
-                    or repo.is_dirty()  # Working dir is dirty
-                    or len(repo.index.diff(head.commit))
-                ):
-                    # Check out files into the working directory
-                    head.set_tracking_branch(origin_main).checkout()
-        finally:
-            del blf  # Release lock
+        log.info(f"Clone test data from {REMOTE_URL} → {path}")
+        git.Repo.clone_from(REMOTE_URL, path, depth=1, branch="main").close()
 
     def parametrize(self, metafunc) -> None:
         """Handle the ``parametrize_specimens`` mark for a specific test."""

@@ -8,7 +8,7 @@ The `sdmx/` package contains the public client, SDMX models, readers, writers, f
 
 - `uv pip install --editable '.[cache,docs,tests]'` installs the package and development extras in the active environment.
 - `uvx pre-commit run --all-files --show-diff-on-failure` runs Ruff formatting and lint checks, then mypy. Run this before tests.
-- `uv run --no-sync pytest --sdmx-fetch-data` runs the default suite and fetches external specimens into the user cache. Pytest excludes `experimental` and `source` tests by default.
+- `uv run --no-sync pytest --sdmx-fetch-data` runs the default suite and clones or repairs the external specimens in the user cache (add `--sdmx-refresh-data` to update them). Pytest excludes `experimental` and `source` tests by default.
 - `uv run --no-sync pytest -m source` runs slow, network-dependent provider tests.
 - `make -C doc html` builds the Sphinx documentation in `doc/_build/html`.
 - `uv build` creates source and wheel distributions with Hatchling.

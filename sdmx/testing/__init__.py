@@ -50,7 +50,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--sdmx-fetch-data",
         action="store_true",
-        help="fetch test specimens from GitHub",
+        help="clone or repair the local copy of the test specimens, if needed",
+    )
+    parser.addoption(
+        "--sdmx-refresh-data",
+        action="store_true",
+        help="update the local copy of the test specimens from GitHub",
     )
     parser.addoption(
         "--sdmx-test-data",
@@ -90,6 +95,7 @@ def pytest_sessionstart(session: "pytest.Session") -> None:
         c.stash[KEY_DATA],
         # Fetch the test data if so configured, and not in an xdist worker process
         c.option.sdmx_fetch_data and not is_xdist_worker(session),
+        c.option.sdmx_refresh_data and not is_xdist_worker(session),
     )
 
     # Create a test source
