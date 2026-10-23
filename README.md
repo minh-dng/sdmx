@@ -8,6 +8,10 @@
 [Source code on GitHub](https://github.com/minh-dng/sdmx) ·
 [Authors](https://github.com/minh-dng/sdmx/graphs/contributors)
 
+This repository, `minh-dng/sdmx`, is an independently maintained fork of
+[khaeru/sdmx](https://github.com/khaeru/sdmx), developed by Paul Natsuo Kishimoto
+and the upstream contributors.
+
 `sdmx` (distributed as `sdmx1`) is a Python implementation of the
 [SDMX](http://www.sdmx.org) 2.1 ([ISO 17369:2013](https://www.iso.org/standard/52500.html))
 and 3.0 standards for **statistical data and metadata exchange**. The SDMX
@@ -16,12 +20,12 @@ and international organisations.
 
 `sdmx` can:
 
-- Explore and retrieve data from [SDMX-REST web services](https://sdmx1.rtfd.io/en/latest/sources.html),
+- Explore and retrieve data from [SDMX-REST web services](https://minh-dng.github.io/sdmx/sources.html),
   including the World Bank, International Monetary Fund, Eurostat, OECD, and
   United Nations.
 - Read and write SDMX-ML (XML), SDMX-JSON, and SDMX-CSV.
 - Convert data and metadata into [pandas](https://pandas.pydata.org/) objects.
-- Apply the [SDMX information model](https://sdmx1.rtfd.io/en/latest/implementation.html#im)
+- Apply the [SDMX information model](https://minh-dng.github.io/sdmx/implementation.html#im)
   to structure and publish data.
 
 ## Install
@@ -48,5 +52,16 @@ automatically by the docs workflow on every push.
 
 ## History
 
-`sdmx` is a fork of [pandaSDMX](https://github.com/dr-leo/pandaSDMX), in turn a
-fork of [pysdmx](https://github.com/widukind/pysdmx).
+The upstream [khaeru/sdmx](https://github.com/khaeru/sdmx) project is a fork of
+[pandaSDMX](https://github.com/dr-leo/pandaSDMX), in turn a fork of
+[pysdmx](https://github.com/widukind/pysdmx). Credit belongs to the authors and
+contributors throughout this lineage; see [NOTICE](NOTICE).
+
+## Contributing and licensing
+
+AI-assisted contributions are allowed. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Upstream has its own contribution policy; this fork does not speak for upstream.
+
+The software remains licensed under [Apache 2.0](LICENSE). The adapted Code of
+Conduct and bundled W3C schemas retain their separate licences, described in
+[NOTICE](NOTICE) and the [licence documentation](https://minh-dng.github.io/sdmx/license.html).

@@ -6,6 +6,7 @@ Contributions are welcome!
 Please read :file:`CONTRIBUTING.md` included in the source distribution or Git repository
 (`here <https://github.com/minh-dng/sdmx/blob/main/CONTRIBUTING.md>`__),
 in particular the Code of Conduct.
+AI-assisted contributions are allowed.
 
 - For current development priorities,
   see the list of `GitHub milestones <https://github.com/minh-dng/sdmx/milestones>`_

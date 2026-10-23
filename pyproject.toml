@@ -8,15 +8,16 @@ version = "3.0.0"
 description = "Statistical Data and Metadata eXchange (SDMX)"
 authors = [{ name = "SDMX Python developers" }]
 maintainers = [
-  { name = "Paul Natsuo Kishimoto", email = "mail@paul.kishimoto.name" },
+  { name = "minh-dng/sdmx maintainers" },
 ]
+license = "Apache-2.0 AND CC-BY-4.0 AND W3C"
+license-files = ["LICENSE", "NOTICE", "CONTRIBUTING.md", "sdmx/format/xml/schemas/LICENSE"]
 readme = "README.md"
 keywords = ["statistics", "SDMX", "pandas", "data", "economics", "science"]
 classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Financial and Insurance Industry",
-  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
@@ -58,6 +59,7 @@ tests = [
 Homepage = "https://github.com/minh-dng/sdmx"
 Repository = "https://github.com/minh-dng/sdmx"
 Documentation = "https://minh-dng.github.io/sdmx/"
+Upstream = "https://github.com/khaeru/sdmx"
 
 [tool.coverage.run]
 omit = [

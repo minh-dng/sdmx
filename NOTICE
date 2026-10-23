@@ -1,0 +1,31 @@
+sdmx1 — minh-dng/sdmx
+https://github.com/minh-dng/sdmx
+
+Copyright 2014–2026, sdmx1 developers.
+
+This independently maintained fork is based on khaeru/sdmx:
+https://github.com/khaeru/sdmx
+Credit to Paul Natsuo Kishimoto and the upstream contributors:
+https://github.com/khaeru/sdmx/graphs/contributors
+
+Earlier project lineage:
+- pandaSDMX: https://github.com/dr-leo/pandaSDMX
+- pysdmx: https://github.com/widukind/pysdmx
+
+Fork changes and contributors:
+https://github.com/minh-dng/sdmx/graphs/contributors
+
+The software remains under the Apache License, Version 2.0; see LICENSE.
+
+The Code of Conduct in CONTRIBUTING.md is adapted from khaeru/sdmx's
+CONTRIBUTING.md, itself derived from codeberg.org/khaeru/py.
+Copyright © 2026 Paul Natsuo Kishimoto <mail@paul.kishimoto.name>.
+It remains under Creative Commons Attribution 4.0 International:
+https://creativecommons.org/licenses/by/4.0/
+The source links and a description of this fork's changes are in CONTRIBUTING.md.
+
+Bundled W3C XML schemas retain the W3C Software and Document License (2002).
+Their copyright notices and licence are in sdmx/format/xml/schemas/LICENSE.
+
+Attribution does not imply endorsement of this fork or its contribution policy
+by upstream authors. This notice is informational and does not modify any licence.
