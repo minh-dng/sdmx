@@ -3,8 +3,11 @@
 What's new?
 ***********
 
-.. Next release
-   ============
+Next release
+============
+
+- Document the fork from ``khaeru/sdmx``, preserve upstream credits and licences,
+  and allow AI-assisted contributions under this fork's contribution policy.
 
 v3.0.0 (2026-10-22)
 ===================

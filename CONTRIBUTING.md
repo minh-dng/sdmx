@@ -1,5 +1,9 @@
 # Contributing
 
+These guidelines apply to [minh-dng/sdmx](https://github.com/minh-dng/sdmx), an
+independently maintained fork of [khaeru/sdmx](https://github.com/khaeru/sdmx).
+Upstream has its own contribution policy; these guidelines describe this fork only.
+
 Would-be contributors are kindly asked to:
 
 - Read and understand the following Code of Conduct.
@@ -14,6 +18,18 @@ Would-be contributors are kindly asked to:
 
 - Open an issue or pull request at https://github.com/minh-dng/sdmx,
   or otherwise get in touch as indicated at the above locations.
+
+## AI-assisted contributions
+
+AI-assisted contributions are allowed.
+
+## Contribution licensing and credit
+
+Unless explicitly stated otherwise, contributions are submitted under the
+project's [Apache License 2.0](LICENSE). Material with a separate licence,
+including the Code of Conduct below, retains that licence. Contributors retain
+their applicable copyrights; submission does not transfer ownership.
+See [NOTICE](NOTICE) for upstream attribution and separately licensed material.
 
 # Code of Conduct
 
@@ -39,14 +55,14 @@ To this end, individual members:
 
 Community members **do not**:
 
-- Harrass other members in any way;
+- Harass other members in any way;
 - Attack or endanger others in any way,
   or create conditions that would prevent their participation
   in the community;
   
   - This includes actions based on any personal characteristic.
     Many lists of such characteristics exist.
-    See references (1–3).
+    See references (1–2).
 
 - Presume entitlement to or otherwise demand the labour of others;
 - Misrepresent others' labour as their own,
@@ -54,12 +70,9 @@ Community members **do not**:
 - Attempt to evade or undermine this Code of Conduct,
   or damage the project or community more generally.
 
-To uphold this Code of Conduct
-**some** community members, currently:
-
-- Paul Natsuo Kishimoto <<mail@paul.kishimoto.name>> (sole maintainer)
-
-…act as community leader(s) and moderators.
+To uphold this Code of Conduct, the
+[maintainers of this fork](https://github.com/minh-dng/sdmx)
+act as community leaders and moderators.
 They take appropriate enforcement action(s),
 including issuing corrections or warnings,
 or blocking offending individuals
@@ -75,7 +88,7 @@ in particular with heed for the privacy and safety of reporters.
 ## Appendices
 ### Interpretation
 
-This appendix gives explanations of how the Code of Conduct is interepreted
+This appendix gives explanations of how the Code of Conduct is interpreted
 in particular cases.
 
 - The Code of Conduct does not distinguish ‘contributors’ from other community members.
@@ -87,33 +100,23 @@ in particular cases.
   - notice lacunae or lack of clarity in documentation and other material
     that can be improved.
 
-- The Code of Conduct is violated on multiple points
-  by any use of large language model (LLM) or “generative AI” products to, *inter alia*,
-  generate or revise code, text (commit messages, documentation, issues, etc.), images, or other content;
-  identify or describe ‘bugs’; translate text;
-  or otherwise mimic part or all of the labour of a community member.
-  Such usage is unethical and harmful to the project, community, and others beyond it.
-
-  For reference and practices of similar projects, see (3–9).
-
 ### Revision
 
 2026-09-15 First version, derived from [codeberg.org/khaeru/py](https://codeberg.org/khaeru/py/src/branch/main/CONTRIBUTING.md) as of this date.
+
+2026-10-23 Adapted from [khaeru/sdmx's contribution guide](https://github.com/khaeru/sdmx/blob/main/CONTRIBUTING.md)
+for minh-dng/sdmx: allow AI-assisted contributions, update moderation
+responsibility, and remove references supporting the former AI prohibition.
+These changes do not imply endorsement by the upstream authors.
 
 ### Copyright and license
 
 Copyright © 2026 Paul Natsuo Kishimoto <<mail@paul.kishimoto.name>>
 
-Licensed under the [Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/).
+This Code of Conduct, including this fork's adaptations, is licensed under the
+[Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/).
 
 ### References
 
 1. https://foundation.wikimedia.org/wiki/Policy:Universal_Code_of_Conduct#3.1_%E2%80%93_Harassment
 2. https://www.contributor-covenant.org/version/2/1/code_of_conduct/
-3. https://ziglang.org/code-of-conduct/
-4. https://greatscottgadgets.com/2026/06-17-llms-generate-code-communities-build-projects/
-5. https://blog.rust-lang.org/inside-rust/2026/08/05/rust-langrust-is-adopting-an-llm-policy/
-6. https://book.servo.org/contributing/getting-started.html#ai-contributions
-7. https://codeberg.org/wafrn/wafrn/src/branch/main/CONTRIBUTING.md
-8. https://slop-free.org
-9. https://codeberg.org/brib/slopfree-software-index

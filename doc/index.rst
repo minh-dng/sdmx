@@ -4,6 +4,9 @@ Statistical Data and Metadata eXchange (SDMX) in Python
 :mod:`sdmx` (distributed as ``sdmx1``) is a Python implementation of the `SDMX <http://www.sdmx.org>`_  2.1 (`ISO 17369:2013 <https://www.iso.org/standard/52500.html>`_) and 3.0 standards for **Statistical Data and Metadata eXchange**.
 The SDMX standards are developed and used by national statistical agencies, central banks, and international organisations.
 
+This documentation describes `minh-dng/sdmx <https://github.com/minh-dng/sdmx>`_, an independently maintained fork of `khaeru/sdmx <https://github.com/khaeru/sdmx>`_.
+See :doc:`license` for upstream credits and licensing.
+
 :mod:`sdmx` can be used to:
 
 - Explore and retrieve data available from SDMX-REST :doc:`web services <sources>` operated by providers including the World Bank, International Monetary Fund, Eurostat, OECD, and United Nations;
@@ -60,12 +63,13 @@ Contributing and getting help
   and/or :doc:`dev` linked above.
 - Report issues, suggest features, or browse the source code on
   `GitHub <https://github.com/minh-dng/sdmx>`_.
-- Join the ``#sdmx1`` `Internet Relay Chat (IRC) <https://en.wikipedia.org/wiki/IRC>`_ channel
+- For upstream community discussions, join the ``#sdmx1`` `Internet Relay Chat (IRC) <https://en.wikipedia.org/wiki/IRC>`_ channel
   on `irc.libera.chat <https://libera.chat>`_.
 
   You can join in a web browser using `web.libera.chat <https://web.libera.chat>`_,
   or using any IRC client;
   see `this guide <https://libera.chat/guides/basics>`_ for more information.
+  Upstream community spaces follow upstream's own contribution policy.
 - Older fora may have answers to some questions:
 
   - On `Stack Overflow <https://stackoverflow.com/questions/tagged/python-sdmx+or+sdmx>`_,
